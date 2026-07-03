@@ -30,17 +30,16 @@ No dependencies beyond React itself. All art is CSS + inline SVG (no raster
 assets); fonts load from Google Fonts with system fallbacks. State is
 session-only React hooks — no localStorage/sessionStorage by design.
 
-## ⚠ Question bank — placeholder in place
+## Question bank
 
-The approved **Chapter 47 exam bank was not provided**, and per the design
-spec's source-fidelity principle no medical content may be generated,
-reworded, or paraphrased. The `RAW_BANK` constant in `ScreamingSirens.jsx`
-therefore contains **clearly marked non-medical placeholder records** that
-only demonstrate the machine, and the app shows a demo-content notice while
-they are loaded.
+`RAW_BANK` in `ScreamingSirens.jsx` contains the **approved 100-question
+Chapter 47 bank** (the vetted 63-question exam + 50-question quiz),
+transferred verbatim by a mechanical converter and character-audited against
+the source file — nothing generated, reworded, or paraphrased, per the design
+spec's source-fidelity principle.
 
-To load the real bank, replace the lines inside `RAW_BANK` with the verbatim
-records from the approved bank file — one record per line:
+To swap in an updated approved bank, replace the lines inside `RAW_BANK` with
+the verbatim records — one record per line:
 
 ```
 category ||| question ||| optionA ||| optionB ||| optionC ||| optionD ||| answerIndex ||| explanation
@@ -50,8 +49,8 @@ category ||| question ||| optionA ||| optionB ||| optionC ||| optionD ||| answer
   shuffled on every draw and the correct index is re-mapped at runtime.
 - Category codes: `dev anat vitals assess airway resp upper lower shock pals
   neuro gimet tox trauma sids abuse`
-- The in-app demo notice disappears automatically once no record contains the
-  string `[PLACEHOLDER`.
+- If any record contains the string `[PLACEHOLDER`, the app automatically
+  shows a demo-content notice in the footer.
 
 After swapping in the bank, rebuild `demo.html` if you use it:
 
