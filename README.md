@@ -1,0 +1,81 @@
+# SCREAMING SIRENS · Paramedic Edition — Ch 47 (Pediatrics)
+
+A slot-machine-styled active-recall drill for paramedic students, dressed as an
+ambulance. You **run calls** instead of pulling a handle; the **Star of Life**
+lights only when you answer correctly. It borrows the feel of a classic 3-reel
+"sevens" machine — anticipation, instant feedback, a streak to chase — but every
+win is earned by knowledge, never chance.
+
+Built to the v2.1 design spec (see `Screaming Sirens Design Doc`).
+
+## What's here
+
+| File | Purpose |
+|---|---|
+| `ScreamingSirens.jsx` | The game — a single-file React component (default export). Drop into any React app. |
+| `demo.html` | Self-contained, pre-bundled build of the same component. Open it directly in any browser — no install, no server. |
+
+## Running it
+
+**Instant:** open `demo.html` in a browser (works from disk, mobile-friendly).
+
+**In a React project:** import the component and render it full-page:
+
+```jsx
+import ScreamingSirens from "./ScreamingSirens.jsx";
+export default function App() { return <ScreamingSirens />; }
+```
+
+No dependencies beyond React itself. All art is CSS + inline SVG (no raster
+assets); fonts load from Google Fonts with system fallbacks. State is
+session-only React hooks — no localStorage/sessionStorage by design.
+
+## ⚠ Question bank — placeholder in place
+
+The approved **Chapter 47 exam bank was not provided**, and per the design
+spec's source-fidelity principle no medical content may be generated,
+reworded, or paraphrased. The `RAW_BANK` constant in `ScreamingSirens.jsx`
+therefore contains **clearly marked non-medical placeholder records** that
+only demonstrate the machine, and the app shows a demo-content notice while
+they are loaded.
+
+To load the real bank, replace the lines inside `RAW_BANK` with the verbatim
+records from the approved bank file — one record per line:
+
+```
+category ||| question ||| optionA ||| optionB ||| optionC ||| optionD ||| answerIndex ||| explanation
+```
+
+- `answerIndex` is 0-based into the **original** option order; options are
+  shuffled on every draw and the correct index is re-mapped at runtime.
+- Category codes: `dev anat vitals assess airway resp upper lower shock pals
+  neuro gimet tox trauma sids abuse`
+- The in-app demo notice disappears automatically once no record contains the
+  string `[PLACEHOLDER`.
+
+After swapping in the bank, rebuild `demo.html` if you use it:
+
+```
+npx esbuild entry.jsx --bundle --minify --define:process.env.NODE_ENV='"production"' --outfile=bundle.js --jsx=automatic
+```
+
+(where `entry.jsx` renders the component into `#root`, then inline the bundle
+into the HTML shell).
+
+## Design guarantees
+
+- **Earned wins only** — the Star of Life lights exclusively on a correct
+  answer; there is no chance element in the reward. The 2-of-3 "near miss"
+  reflects real partial performance, never a manufactured tease.
+- **No dark patterns** — no loss-chasing pressure, no simulated money. Play is
+  unlimited; the Shift Report is a dignified stopping point, never a cap.
+- **Source fidelity** — questions, options, answers, and rationales render
+  verbatim from the bank; the only added flavor is the Dispatch/Protocol-check
+  tag, derived from the prompt text itself.
+- **Accessibility** — keyboard operable with visible amber focus rings, real
+  `<button>` options, large tap targets, high-contrast text, and full
+  `prefers-reduced-motion` support (spin and flash effects are skipped; the
+  game stays fully playable).
+
+This is educational software — not medical advice, diagnosis, treatment
+guidance, or a clinical decision-support tool.
