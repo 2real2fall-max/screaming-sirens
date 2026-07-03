@@ -61,13 +61,24 @@ npx esbuild entry.jsx --bundle --minify --define:process.env.NODE_ENV='"producti
 (where `entry.jsx` renders the component into `#root`, then inline the bundle
 into the HTML shell).
 
-## Design guarantees
+## Game design
 
-- **Earned wins only** — the Star of Life lights exclusively on a correct
-  answer; there is no chance element in the reward. The 2-of-3 "near miss"
-  reflects real partial performance, never a manufactured tease.
-- **No dark patterns** — no loss-chasing pressure, no simulated money. Play is
-  unlimited; the Shift Report is a dignified stopping point, never a cap.
+- **Skill-weighted randomness** — answers never pick a reel symbol. A correct
+  answer tilts that reel's probability weights toward the premium symbols
+  (quarter → pulse → Star of Life → seven); the reel then stops randomly from
+  its weighted table. Jackpots are impossible on 0-correct rounds and rare
+  even on perfect ones.
+- **Real economy** — finite bankroll (20 quarters), 1 quarter per spin
+  deducted up front, payouts from a visible single-payline paytable, and a
+  true Shift Over game-over state at 0 quarters that requires an explicit
+  restart. **Practice mode** offers free spins with identical reel logic.
+- **Honest presentation** — the displayed outcome is always the raw weighted
+  roll: no faked wins, no disguised losses, no engineered near-misses. Streak
+  ("Siren heat") is cosmetic only — light tempo and celebration language,
+  never odds, payouts, or protection.
+- **No dark patterns** — no real-money framing; the transparency line in the
+  paytable and footer states plainly that answers improve odds rather than
+  selecting symbols.
 - **Source fidelity** — questions, options, answers, and rationales render
   verbatim from the bank; the only added flavor is the Dispatch/Protocol-check
   tag, derived from the prompt text itself.

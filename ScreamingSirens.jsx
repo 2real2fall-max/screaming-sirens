@@ -190,16 +190,55 @@ const BANK_IS_PLACEHOLDER = RAW_BANK.includes("[PLACEHOLDER");
 const T = { TICK_MS: 90, SPIN_MS: 800, BEAT_MS: 640, RESOLVE_MS: 720, FLASH_MS: 560 };
 const START_QUARTERS = 20;
 const SPIN_COST = 1;
-const RESTOCK = 20;
-const PAYOUT = [0, 1, 3, 10]; // by stars in a spin
 const SPIN_GLYPHS = ["✚", "♥", "◆"];
 
-const BANNERS = [
-  "NO STARS — reset and roll again",
-  "ONE STAR — on the board",
-  "TWO STARS — one reel off the trifecta",
-  "CODE 3 — RUNNING HOT · THREE STARS",
+/* ── slot mechanics: symbols, weights, paytable ──
+   Answers never pick a symbol. A correct answer tilts that reel's
+   probability weights toward the premium symbols; the reel then stops
+   randomly from its weighted table. No presentation-layer tricks —
+   wins, losses, and near-misses all come straight from these rolls.
+   Streak ("Siren heat") is cosmetic only: it drives light tempo and
+   celebration language, never odds, payouts, or protection. */
+const SYMBOL_TIERS = ["flat", "quarter", "pulse", "star", "seven"]; // low → jackpot
+
+/* correctCount = correct answers in this round so far, INCLUDING this reel */
+export function buildWeights(isCorrect, correctCount) {
+  if (isCorrect) {
+    // fail odds drop, premium odds rise; the jackpot symbol stays rare
+    return { flat: 8, quarter: 32, pulse: 30, star: 22, seven: 2 + 2 * correctCount };
+  }
+  // wrong: the fail symbol dominates and premiums nearly vanish. The tiny
+  // seven weight only exists once 2+ answers in the round are right, so a
+  // jackpot is impossible at 0 correct and vanishingly rare at 1.
+  return { flat: 60, quarter: 28, pulse: 9, star: 2, seven: correctCount >= 2 ? 1 : 0 };
+}
+
+export function weightedStop(weights, rand = Math.random) {
+  const entries = Object.entries(weights).filter(([, w]) => w > 0);
+  let r = rand() * entries.reduce((a, [, w]) => a + w, 0);
+  for (const [sym, w] of entries) if ((r -= w) < 0) return sym;
+  return entries[entries.length - 1][0];
+}
+
+/* single center payline, 3-symbol evaluation, first matching row pays */
+export const PAYTABLE = [
+  { key: "seven3",   label: "CODE 3 — JACKPOT · TRIPLE SEVENS", pay: 100, tier: 3, row: "7 · 7 · 7",             test: (n) => n.seven === 3 },
+  { key: "star3",    label: "THREE STARS OF LIFE",              pay: 25,  tier: 2, row: "3× Star of Life",       test: (n) => n.star === 3 },
+  { key: "pulse3",   label: "TRIPLE PULSE",                     pay: 12,  tier: 2, row: "3× Pulse",              test: (n) => n.pulse === 3 },
+  { key: "seven2",   label: "TWO SEVENS",                       pay: 8,   tier: 2, row: "2× Seven",              test: (n) => n.seven === 2 },
+  { key: "quarter3", label: "THREE QUARTERS",                   pay: 6,   tier: 1, row: "3× Quarter",            test: (n) => n.quarter === 3 },
+  { key: "star2",    label: "TWO STARS",                        pay: 4,   tier: 1, row: "2× Star",               test: (n) => n.star === 2 },
+  { key: "pulse2",   label: "TWO PULSES",                       pay: 2,   tier: 1, row: "2× Pulse",              test: (n) => n.pulse === 2 },
+  { key: "quarter2", label: "TWO QUARTERS — BREAK EVEN",        pay: 1,   tier: 1, row: "2× Quarter",            test: (n) => n.quarter === 2 },
+  { key: "clean",    label: "CLEAN LINE — NO FLATLINE",         pay: 2,   tier: 1, row: "Any line, no flatline", test: (n) => n.flat === 0 },
+  { key: "bust",     label: "LINE FLATLINED — NO PAY",          pay: 0,   tier: 0, row: null,                    test: () => true },
 ];
+
+export function evaluatePaytable(symbols) {
+  const n = { flat: 0, quarter: 0, pulse: 0, star: 0, seven: 0 };
+  symbols.forEach((s) => n[s]++);
+  return PAYTABLE.find((p) => p.test(n));
+}
 
 function heatTier(streak) {
   return streak >= 5 ? "blazing" : streak >= 3 ? "warm" : "cool";
@@ -226,7 +265,8 @@ function shuffleQuestion(q) {
     options: order.map((o) => q.options[o]),
     correctIndex: order.indexOf(q.answerIndex),
     picked: null,
-    result: null, // 'star' | 'flat'
+    correct: null, // was this reel's question answered correctly
+    symbol: null, // weighted-random stop: flat|quarter|pulse|star|seven
   };
 }
 
@@ -320,6 +360,20 @@ function FlatlineX() {
   );
 }
 
+/* mid-tier payout symbol: a clean EKG pulse (placeholder art direction) */
+function PulseEKG() {
+  return (
+    <svg viewBox="0 0 100 62" className="pulsekg" aria-hidden="true" focusable="false">
+      <path className="pk" d="M4 36 H22 L28 26 L35 46 L43 12 L51 52 L58 36 H96" />
+    </svg>
+  );
+}
+
+/* top jackpot symbol: the sizzling seven (placeholder art direction) */
+function SevenGlyph() {
+  return <span className="seven7">7</span>;
+}
+
 function AmbulanceBadge() {
   return (
     <svg viewBox="0 0 128 64" className="amb" aria-hidden="true" focusable="false">
@@ -392,7 +446,10 @@ function Pane({ face, glyph }) {
       {face.kind === "live" && <span className="glyph">{glyph}</span>}
       {face.kind === "pending" && <span className="q bright">?</span>}
       {face.kind === "future" && <span className="q dim">?</span>}
+      {face.kind === "quarter" && <span className="coin lock">25¢</span>}
+      {face.kind === "pulse" && <PulseEKG />}
       {face.kind === "star" && <StarOfLife lit />}
+      {face.kind === "seven" && <SevenGlyph />}
       {face.kind === "flat" && <FlatlineX />}
     </div>
   );
@@ -413,11 +470,16 @@ function Gauge({ label, value, hot, coin }) {
 function Paytable() {
   return (
     <div className="paytable">
-      <div className="pt-title">Payout — Code 3</div>
-      <div className="pt-row"><span className="pt-stars">3 stars</span><span className="pt-pay plus">+10</span></div>
-      <div className="pt-row"><span className="pt-stars">2 stars</span><span className="pt-pay plus">+3</span></div>
-      <div className="pt-row"><span className="pt-stars">1 star</span><span className="pt-pay plus">+1</span></div>
-      <div className="pt-row"><span className="pt-stars">0</span><span className="pt-pay">you keep the lesson</span></div>
+      <div className="pt-title">Paytable — center line</div>
+      {PAYTABLE.filter((p) => p.row).map((p) => (
+        <div className="pt-row" key={p.key}>
+          <span className="pt-stars">{p.row}</span>
+          <span className="pt-pay plus">+{p.pay}</span>
+        </div>
+      ))}
+      <p className="pt-note">
+        1 quarter per spin · correct answers improve the odds — they never pick the symbols
+      </p>
     </div>
   );
 }
@@ -443,7 +505,7 @@ function QuestionCard({ reel, index, onPick, locked }) {
         {options.map((opt, i) => {
           let cls = "opt";
           if (reel.picked === i) {
-            cls += reel.result === "star" ? " hit" : " miss";
+            cls += reel.correct ? " hit" : " miss";
           }
           return (
             <button
@@ -487,22 +549,22 @@ function PayCount({ amount, animate }) {
   return <>{n}</>;
 }
 
-function Result({ reels, stars, payout, reduced }) {
+function Result({ reels, outcome, correctCount, reduced }) {
   const misses = reels
     .map((r, i) => ({ ...r, reelNo: i + 1 }))
-    .filter((r) => r.result === "flat");
+    .filter((r) => r.correct === false);
   return (
     <div className="result">
-      <div className={"banner s" + stars} role="status">
-        {BANNERS[stars]}
+      <div className={"banner s" + outcome.tier} role="status">
+        {outcome.label}
       </div>
-      {payout > 0 && (
+      {outcome.pay > 0 && (
         <div className="payline">
-          +<PayCount amount={payout} animate={!reduced && payout > 1} /> quarter
-          {payout === 1 ? "" : "s"}
+          +<PayCount amount={outcome.pay} animate={!reduced && outcome.pay > 1} /> quarter
+          {outcome.pay === 1 ? "" : "s"}
         </div>
       )}
-      {stars === 3 && <div className="sweep">Clean trifecta — all three sourced cold. ★</div>}
+      {correctCount === 3 && <div className="sweep">Clean trifecta — all three sourced cold. ★</div>}
       {misses.length > 0 && (
         <div className="missrev">
           <div className="mr-head">Clear these before the next run</div>
@@ -555,6 +617,34 @@ function ReportOverlay({ stats, onClose }) {
   );
 }
 
+/* true fail state: the run is over until the player explicitly restarts */
+function ShiftOverOverlay({ stats, onRestart }) {
+  const btnRef = useRef(null);
+  useEffect(() => {
+    btnRef.current && btnRef.current.focus();
+  }, []);
+  const { runs, answered, correct, bestStreak, bestHit } = stats;
+  const acc = answered ? Math.round((100 * correct) / answered) + "%" : "—";
+  return (
+    <div className="overlay" role="dialog" aria-modal="true" aria-label="Shift Over">
+      <div className="report">
+        <h2 className="r-title over">SHIFT OVER</h2>
+        <p className="r-line">Out of quarters — the run ends here.</p>
+        <div className="r-grid">
+          <div className="r-stat"><span className="r-num">{runs}</span><span className="r-lab">rounds</span></div>
+          <div className="r-stat"><span className="r-num">{acc}</span><span className="r-lab">accuracy</span></div>
+          <div className="r-stat"><span className="r-num">{bestStreak}</span><span className="r-lab">best streak</span></div>
+          <div className="r-stat"><span className="r-num">+{bestHit}</span><span className="r-lab">best hit</span></div>
+        </div>
+        <p className="r-always">Every run starts fresh — streak is bragging rights, not a safety net.</p>
+        <button type="button" ref={btnRef} className="btn restart" onClick={onRestart}>
+          RESTART SHIFT ▸
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ═══════════════════════════ main component ═══════════════════════════ */
 
 export default function ScreamingSirens() {
@@ -572,9 +662,11 @@ export default function ScreamingSirens() {
   const [activeReel, setActiveReel] = useState(0);
   const [spinTick, setSpinTick] = useState(0);
   const [flashWin, setFlashWin] = useState(false);
-  const [lastStars, setLastStars] = useState(0);
-  const [lastPayout, setLastPayout] = useState(0);
+  const [outcome, setOutcome] = useState(null); // paytable row of the last settled round
   const [reportOpen, setReportOpen] = useState(false);
+  const [mode, setMode] = useState("game"); // 'game' (finite bankroll) | 'practice' (free spins)
+  const [gameOver, setGameOver] = useState(false);
+  const [bestHit, setBestHit] = useState(0);
 
   const lockRef = useRef(false);
   const timers = useRef([]);
@@ -583,10 +675,14 @@ export default function ScreamingSirens() {
   }, []);
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
-  const broke = quarters < SPIN_COST;
   const tier = heatTier(heat);
-  const rave = phase === "resolved" && lastStars === 3;
+  const rave = phase === "resolved" && outcome != null && outcome.tier === 3;
   const shownQuarters = useCountUp(quarters, !reduced);
+
+  /* true game over: bankroll at zero once the round settles (game mode) */
+  useEffect(() => {
+    if (mode === "game" && phase === "resolved" && quarters <= 0) setGameOver(true);
+  }, [mode, phase, quarters]);
 
   /* spin glyph ticker — the active reel keeps rolling while the player
      answers and locks on answer; static bright ? under reduced motion */
@@ -598,11 +694,15 @@ export default function ScreamingSirens() {
   }, [ticking]);
 
   const respond = useCallback(() => {
-    if (phase !== "idle" || quarters < SPIN_COST || BANK.length < 3) return; // spec §17
-    setQuarters((q) => q - SPIN_COST);
+    if (phase !== "idle" || gameOver || BANK.length < 3) return; // spec §17
+    if (mode === "game") {
+      if (quarters < SPIN_COST) return;
+      setQuarters((q) => q - SPIN_COST); // wager leaves the bankroll immediately
+    }
     setRuns((r) => r + 1);
     setReels(drawThree(BANK));
     setActiveReel(0);
+    setOutcome(null);
     lockRef.current = false;
     if (reduced) {
       setPhase("answering"); // reduced motion: skip the spin (spec §6)
@@ -610,22 +710,20 @@ export default function ScreamingSirens() {
       setPhase("spinning");
       after(T.SPIN_MS, () => setPhase("answering"));
     }
-  }, [phase, quarters, reduced, after]);
+  }, [phase, gameOver, mode, quarters, reduced, after]);
 
-  const restock = useCallback(() => {
-    if (phase !== "idle" || !broke) return;
-    setQuarters((q) => q + RESTOCK);
-  }, [phase, broke]);
-
-  const resolve = useCallback((finalReels) => {
-    const stars = finalReels.filter((r) => r.result === "star").length;
-    const pay = PAYOUT[stars];
-    setLastStars(stars);
-    setLastPayout(pay);
-    if (pay) setQuarters((q) => q + pay);
-    if (stars === 3) setCode3s((c) => c + 1);
-    setPhase("resolved");
-  }, []);
+  /* settle the round: evaluate the center line against the paytable */
+  const settleRound = useCallback(
+    (finalReels) => {
+      const out = evaluatePaytable(finalReels.map((r) => r.symbol));
+      setOutcome(out);
+      if (out.pay) setBestHit((b) => Math.max(b, out.pay));
+      if (out.tier === 3) setCode3s((c) => c + 1);
+      if (mode === "game" && out.pay) setQuarters((q) => q + out.pay);
+      setPhase("resolved");
+    },
+    [mode]
+  );
 
   const pick = useCallback(
     (i) => {
@@ -633,22 +731,30 @@ export default function ScreamingSirens() {
       lockRef.current = true;
       const reel = reels[activeReel];
       const hit = i === reel.correctIndex;
+      /* the answer only tilts the odds — the reel still stops randomly
+         from its weighted table (never a guaranteed symbol) */
+      const correctCount =
+        reels.filter((r) => r.correct === true).length + (hit ? 1 : 0);
+      const symbol = weightedStop(buildWeights(hit, correctCount));
       const next = reels.map((r, idx) =>
-        idx === activeReel ? { ...r, picked: i, result: hit ? "star" : "flat" } : r
+        idx === activeReel ? { ...r, picked: i, correct: hit, symbol } : r
       );
       setReels(next);
       setAnswered((a) => a + 1);
       if (hit) {
         setCorrect((c) => c + 1);
         setHeat((h) => {
+          // cosmetic only — heat never touches weights, payouts, or safety
           const nh = h + 1;
           setBestStreak((b) => Math.max(b, nh));
           return nh;
         });
-        setFlashWin(true);
-        after(T.FLASH_MS, () => setFlashWin(false));
       } else {
         setHeat(0);
+      }
+      if (symbol === "star" || symbol === "seven") {
+        setFlashWin(true);
+        after(T.FLASH_MS, () => setFlashWin(false));
       }
       if (activeReel < 2) {
         after(T.BEAT_MS, () => {
@@ -657,20 +763,42 @@ export default function ScreamingSirens() {
         });
       } else {
         after(T.RESOLVE_MS, () => {
-          resolve(next);
+          settleRound(next);
           lockRef.current = false;
         });
       }
     },
-    [phase, reels, activeReel, after, resolve]
+    [phase, reels, activeReel, after, settleRound]
   );
 
   const runItBack = useCallback(() => {
-    if (phase !== "resolved") return;
+    if (phase !== "resolved" || gameOver) return;
     setReels([]);
     setActiveReel(0);
     setPhase("idle");
-  }, [phase]);
+  }, [phase, gameOver]);
+
+  /* bust → full restart: bankroll, streak, and stats all reset */
+  const resetRun = useCallback(() => {
+    setQuarters(START_QUARTERS);
+    setHeat(0);
+    setBestStreak(0);
+    setCode3s(0);
+    setRuns(0);
+    setAnswered(0);
+    setCorrect(0);
+    setBestHit(0);
+    setReels([]);
+    setActiveReel(0);
+    setOutcome(null);
+    setGameOver(false);
+    setPhase("idle");
+  }, []);
+
+  const toggleMode = useCallback(() => {
+    if (phase !== "idle" || gameOver) return;
+    setMode((m) => (m === "game" ? "practice" : "game"));
+  }, [phase, gameOver]);
 
   /* windshield faces (symbols only — never question text) */
   const faces = useMemo(() => {
@@ -678,8 +806,7 @@ export default function ScreamingSirens() {
       if (phase === "spinning") return { kind: "spin" };
       const r = reels[i];
       if (!r) return { kind: "idle" };
-      if (r.result === "star") return { kind: "star" };
-      if (r.result === "flat") return { kind: "flat" };
+      if (r.symbol) return { kind: r.symbol }; // locked reels stay visible in place
       if (phase === "answering")
         return i === activeReel ? { kind: reduced ? "pending" : "live" } : { kind: "future" };
       return { kind: "idle" };
@@ -691,29 +818,22 @@ export default function ScreamingSirens() {
   /* console button + subtext by state */
   let consoleBtn;
   let subtext;
-  if (phase === "resolved") {
+  if (phase === "resolved" && !gameOver) {
     consoleBtn = (
       <button type="button" className="btn runback" onClick={runItBack}>
         RUN IT BACK ▸
       </button>
     );
     subtext = "Three fresh calls on deck.";
-  } else if (phase === "idle" && broke) {
-    consoleBtn = (
-      <button type="button" className="btn restock" onClick={restock}>
-        RESTOCK THE RIG (+20)
-      </button>
-    );
-    subtext = "Out of quarters — restock and keep rolling, no limit.";
   } else {
     consoleBtn = (
       <button
         type="button"
         className="btn respond"
         onClick={respond}
-        disabled={phase !== "idle"}
+        disabled={phase !== "idle" || gameOver}
       >
-        ◉ RESPOND · INSERT 25¢
+        {mode === "practice" ? "◉ RESPOND · FREE DRILL" : "◉ RESPOND · INSERT 25¢"}
       </button>
     );
     subtext =
@@ -721,7 +841,9 @@ export default function ScreamingSirens() {
         ? "answer to lock the reel"
         : phase === "spinning"
         ? "reels rolling…"
-        : "Three calls, three reels — every right answer ignites a Star of Life.";
+        : mode === "practice"
+        ? "Practice mode — free spins, same odds, nothing at stake."
+        : "Right answers tilt the reels toward the big symbols — the stop is always a real roll.";
   }
 
   return (
@@ -736,7 +858,11 @@ export default function ScreamingSirens() {
             <div className="head">
               <div className="head-l">
                 <span className="corner-lamp" aria-hidden="true" />
-                <Gauge label="Quarters" value={shownQuarters} coin />
+                <Gauge
+                  label="Quarters"
+                  value={mode === "practice" ? "∞" : shownQuarters}
+                  coin
+                />
               </div>
               <div className="marquee">
                 <h1 className="title">
@@ -797,15 +923,30 @@ export default function ScreamingSirens() {
                     reel={reels[activeReel]}
                     index={activeReel}
                     onPick={pick}
-                    locked={reels[activeReel].result !== null}
+                    locked={reels[activeReel].symbol !== null}
                   />
                 )}
-                {phase === "resolved" && (
-                  <Result reels={reels} stars={lastStars} payout={lastPayout} reduced={reduced} />
+                {phase === "resolved" && outcome && (
+                  <Result
+                    reels={reels}
+                    outcome={outcome}
+                    correctCount={reels.filter((r) => r.correct === true).length}
+                    reduced={reduced}
+                  />
                 )}
-                <button type="button" className="endshift" onClick={() => setReportOpen(true)}>
-                  End shift · view report
-                </button>
+                <div className="bay-actions">
+                  <button type="button" className="endshift" onClick={() => setReportOpen(true)}>
+                    End shift · view report
+                  </button>
+                  <button
+                    type="button"
+                    className="endshift modetoggle"
+                    onClick={toggleMode}
+                    disabled={phase !== "idle" || gameOver}
+                  >
+                    Mode: {mode === "game" ? "Game" : "Practice"}
+                  </button>
+                </div>
               </div>
               <span className="chevcol flip" aria-hidden="true" />
             </div>
@@ -824,14 +965,21 @@ export default function ScreamingSirens() {
                 </p>
               )}
               <p>
-                Every Star of Life is earned — correct answers only, never chance. Questions are
-                drawn verbatim from your vetted Chapter 47 exam bank. Roll as long as you like.
+                Skill sets the odds — correct answers weight the reels toward the premium
+                symbols, but every stop is an honest random roll; nothing is faked or nudged.
+                Questions are drawn verbatim from your vetted Chapter 47 exam bank.
               </p>
             </div>
           </div>
         </div>
       </div>
 
+      {gameOver && !reportOpen && (
+        <ShiftOverOverlay
+          stats={{ runs, answered, correct, bestStreak, bestHit }}
+          onRestart={resetRun}
+        />
+      )}
       {reportOpen && (
         <ReportOverlay
           stats={{ runs, answered, correct, bestStreak, code3s }}
@@ -1217,6 +1365,25 @@ const CSS = `
 .pane-star{ box-shadow:inset 0 7px 18px rgba(0,0,0,.95), inset 0 0 34px rgba(42,134,255,.22), 0 1px 0 rgba(255,255,255,.22); }
 .pane-flat{ box-shadow:inset 0 7px 18px rgba(0,0,0,.95), inset 0 0 26px rgba(120,20,30,.16), 0 1px 0 rgba(255,255,255,.22); }
 
+/* locked payout symbols */
+.coin.lock{ animation:lockpop .3s cubic-bezier(.2,1.6,.4,1); }
+@keyframes lockpop{ 0%{ transform:scale(.45); opacity:0; } 100%{ transform:scale(1); opacity:1; } }
+.pulsekg{ width:82%; height:auto; animation:lockpop .3s cubic-bezier(.2,1.6,.4,1); }
+.pulsekg .pk{
+  fill:none; stroke:var(--cyan); stroke-width:4.5; stroke-linecap:round; stroke-linejoin:round;
+  filter:drop-shadow(0 0 6px rgba(110,190,255,.8)) drop-shadow(0 0 16px rgba(60,140,230,.5));
+  stroke-dasharray:230; stroke-dashoffset:230; animation:draw .5s ease-out forwards;
+}
+.pane-pulse{ box-shadow:inset 0 7px 18px rgba(0,0,0,.95), inset 0 0 30px rgba(60,140,230,.18), 0 1px 0 rgba(255,255,255,.22); }
+.seven7{
+  font-family:var(--disp); font-weight:800; font-size:clamp(40px,12vw,58px); line-height:1;
+  color:#ffd9a0;
+  text-shadow:0 0 8px rgba(255,157,46,1), 0 0 24px rgba(225,29,46,.9), 0 0 44px rgba(225,29,46,.55);
+  animation:ignite .45s cubic-bezier(.2,1.6,.4,1);
+}
+.pane-seven{ border-color:var(--amber); box-shadow:inset 0 7px 18px rgba(0,0,0,.95), inset 0 0 36px rgba(255,140,40,.28), 0 0 14px rgba(255,179,0,.4), 0 1px 0 rgba(255,255,255,.22); }
+.pane-quarter{ box-shadow:inset 0 7px 18px rgba(0,0,0,.95), inset 0 0 26px rgba(255,179,0,.12), 0 1px 0 rgba(255,255,255,.22); }
+
 .sol{ width:72%; height:auto; }
 .sol .sol-bar{ fill:var(--blue); }
 .sol .sol-hub{ fill:#0d2c55; stroke:#9cc6ff; stroke-width:2.5; }
@@ -1395,6 +1562,7 @@ const CSS = `
 .pt-stars{ font-weight:600; }
 .pt-pay.plus{ color:#9c6b00; font-family:var(--disp); font-weight:800; font-size:15px; letter-spacing:.06em; }
 .pt-pay{ color:var(--ink2); }
+.pt-note{ margin:9px 0 0; font-size:11px; line-height:1.5; text-align:center; color:var(--ink2); }
 
 /* question card (on the run sheet) */
 .qcard{ text-align:left; }
@@ -1488,6 +1656,7 @@ const CSS = `
 .m-a strong{ color:var(--ink); }
 .m-exp{ margin:0; font-size:13.5px; line-height:1.55; color:var(--ink2); overflow-wrap:break-word; }
 
+.bay-actions{ display:flex; justify-content:center; gap:9px; flex-wrap:wrap; }
 .endshift{
   display:block; margin:14px auto 4px; padding:8px 15px; min-height:40px;
   background:linear-gradient(180deg, #fff, #eef2f6);
@@ -1497,6 +1666,8 @@ const CSS = `
 }
 .endshift:hover{ color:var(--ink); border-color:#5f6a76; }
 .endshift:focus-visible{ outline:3px solid #c77800; outline-offset:2px; }
+.bay-actions .endshift{ margin:14px 0 4px; }
+.modetoggle:disabled{ opacity:.5; cursor:default; }
 
 /* ── bumper & footer ── */
 .bumper{
@@ -1581,6 +1752,20 @@ const CSS = `
 }
 .btn.back:active{ transform:translateY(4px); box-shadow:0 0 0 3px #dfe7ee, 0 0 0 5px #4e5864, 0 2px 0 #082f66, 0 5px 10px rgba(0,0,0,.5), inset 0 2px 1px rgba(255,255,255,.4), inset 0 -5px 10px rgba(0,0,0,.5); }
 .btn.back:focus-visible{ outline-color:var(--amber); }
+.r-title.over{ color:#ff9aa2; text-shadow:0 0 10px rgba(225,29,46,.6), 0 0 26px rgba(225,29,46,.3); }
+.btn.restart{
+  width:100%; min-height:52px; font-size:17px;
+  background:
+    radial-gradient(120% 90% at 50% -12%, rgba(255,255,255,.32), transparent 45%),
+    linear-gradient(180deg, #ff5560 0%, #d5121f 44%, #96101c 78%, #6f0812 100%);
+  text-shadow:0 1px 2px rgba(0,0,0,.8);
+  box-shadow:
+    0 0 0 3px #dfe7ee, 0 0 0 5px #4e5864,
+    0 6px 0 #55060e, 0 11px 20px rgba(0,0,0,.6),
+    inset 0 2px 1px rgba(255,255,255,.55), inset 0 -9px 14px rgba(0,0,0,.45);
+}
+.btn.restart:active{ transform:translateY(4px); box-shadow:0 0 0 3px #dfe7ee, 0 0 0 5px #4e5864, 0 2px 0 #55060e, 0 5px 10px rgba(0,0,0,.5), inset 0 2px 1px rgba(255,255,255,.4), inset 0 -5px 10px rgba(0,0,0,.5); }
+.btn.restart:focus-visible{ outline-color:var(--amber); }
 
 /* ── responsive (spec §14) ── */
 @media (max-width:420px){
@@ -1610,8 +1795,9 @@ const CSS = `
 @media (prefers-reduced-motion: reduce){
   .mk,.led,.strip,.q.bright,.q.dim,.pane-live,.pane-pending,.banner.s3,
   .bayinset.winflash,.sol.lit,.flatx .ecg,.flatx .xs,.flare,
-  .rig.code3 .frame,.marquee::before,.title,.respond{ animation:none !important; }
-  .flatx .ecg,.flatx .xs{ stroke-dashoffset:0; }
+  .rig.code3 .frame,.marquee::before,.title,.respond,
+  .coin.lock,.pulsekg,.pulsekg .pk,.seven7{ animation:none !important; }
+  .flatx .ecg,.flatx .xs,.pulsekg .pk{ stroke-dashoffset:0; }
   .flare,.marquee::before{ display:none; }
   .glyph{ filter:none; }
   .btn,.opt{ transition:none; }
