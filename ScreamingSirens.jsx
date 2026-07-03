@@ -187,10 +187,18 @@ const BANK_IS_PLACEHOLDER = RAW_BANK.includes("[PLACEHOLDER");
 
 /* ─────────────────────── tunable constants (spec §6/§8) ─────────────── */
 
-const T = { TICK_MS: 90, SPIN_MS: 800, BEAT_MS: 640, RESOLVE_MS: 720, FLASH_MS: 560 };
-const START_QUARTERS = 20;
+const T = {
+  TICK_MS: 90, // cycle speed of unresolved reels
+  SPIN_MS: 800,
+  FLASH_MS: 560,
+  LAND_GAPS: [70, 90, 115, 150, 195, 250, 330, 430], // deceleration steps after an answer
+  REGISTER_MS: 420, // the player must see the landed symbol before the next question
+  DECIDE_MS: 820, // extra pause after reel 3 lands, before the round settles
+};
+const START_QUARTERS = 6; // tight bankroll — the run should feel dangerous early
 const SPIN_COST = 1;
-const SPIN_GLYPHS = ["✚", "♥", "◆"];
+/* unresolved reels cycle through the ACTUAL symbol set, not placeholders */
+const CYCLE = ["quarter", "pulse", "star", "seven", "flat"];
 
 /* ── slot mechanics: symbols, weights, paytable ──
    Answers never pick a symbol. A correct answer tilts that reel's
@@ -438,12 +446,34 @@ function MarkerLights() {
   );
 }
 
-function Pane({ face, glyph }) {
+/* static render of any symbol, used while a reel cycles (entrance
+   animations are suppressed via .pane-cycle CSS) */
+function SymbolFace({ sym }) {
+  if (sym === "quarter") return <span className="coin">25¢</span>;
+  if (sym === "pulse") return <PulseEKG />;
+  if (sym === "star") return <StarOfLife />;
+  if (sym === "seven") return <SevenGlyph />;
+  return <FlatlineX />;
+}
+
+function Pane({ face, extra }) {
+  let cls;
+  if (face.kind === "cycle") {
+    cls =
+      "pane pane-cycle cyc-" +
+      face.mode +
+      (face.mode === "live" || face.mode === "landing" ? " pane-live" : "");
+  } else {
+    cls = "pane pane-" + face.kind;
+  }
   return (
-    <div className={"pane pane-" + face.kind}>
+    <div className={cls + (extra || "")}>
       {face.kind === "idle" && <span className="coin">25¢</span>}
-      {face.kind === "spin" && <span className="glyph">{glyph}</span>}
-      {face.kind === "live" && <span className="glyph">{glyph}</span>}
+      {face.kind === "cycle" && (
+        <span className="symcycle">
+          <SymbolFace sym={face.sym} />
+        </span>
+      )}
       {face.kind === "pending" && <span className="q bright">?</span>}
       {face.kind === "future" && <span className="q dim">?</span>}
       {face.kind === "quarter" && <span className="coin lock">25¢</span>}
@@ -547,6 +577,31 @@ function PayCount({ amount, animate }) {
     return () => clearInterval(iv);
   }, [amount, animate]);
   return <>{n}</>;
+}
+
+/* marquee payout counter — adaptive step so even +100 lands in ~0.9s */
+function AnnounceCount({ pay, animate }) {
+  const [n, setN] = useState(animate ? 0 : pay);
+  useEffect(() => {
+    if (!animate) {
+      setN(pay);
+      return;
+    }
+    setN(0);
+    const step = Math.max(1, Math.ceil(pay / 16));
+    const iv = setInterval(() => {
+      setN((v) => {
+        const nv = v + step;
+        if (nv >= pay) {
+          clearInterval(iv);
+          return pay;
+        }
+        return nv;
+      });
+    }, 55);
+    return () => clearInterval(iv);
+  }, [pay, animate]);
+  return <>+{n}</>;
 }
 
 function Result({ reels, outcome, correctCount, reduced }) {
@@ -663,6 +718,9 @@ export default function ScreamingSirens() {
   const [spinTick, setSpinTick] = useState(0);
   const [flashWin, setFlashWin] = useState(false);
   const [outcome, setOutcome] = useState(null); // paytable row of the last settled round
+  const [landing, setLanding] = useState(null); // {reel, face} while a reel decelerates
+  const [justLanded, setJustLanded] = useState(null); // reel index for the lock snap
+  const [announce, setAnnounce] = useState(null); // marquee payout announcement
   const [reportOpen, setReportOpen] = useState(false);
   const [mode, setMode] = useState("game"); // 'game' (finite bankroll) | 'practice' (free spins)
   const [gameOver, setGameOver] = useState(false);
@@ -679,10 +737,11 @@ export default function ScreamingSirens() {
   const rave = phase === "resolved" && outcome != null && outcome.tier === 3;
   const shownQuarters = useCountUp(quarters, !reduced);
 
-  /* true game over: bankroll at zero once the round settles (game mode) */
+  /* true game over: bankroll at zero once the round settles (game mode).
+     Waits for the payout announcement — the bankroll updates after it. */
   useEffect(() => {
-    if (mode === "game" && phase === "resolved" && quarters <= 0) setGameOver(true);
-  }, [mode, phase, quarters]);
+    if (mode === "game" && phase === "resolved" && !announce && quarters <= 0) setGameOver(true);
+  }, [mode, phase, quarters, announce]);
 
   /* spin glyph ticker — the active reel keeps rolling while the player
      answers and locks on answer; static bright ? under reduced motion */
@@ -712,17 +771,26 @@ export default function ScreamingSirens() {
     }
   }, [phase, gameOver, mode, quarters, reduced, after]);
 
-  /* settle the round: evaluate the center line against the paytable */
+  /* settle the round: evaluate the center line against the paytable.
+     Wins are announced front-and-center in the marquee first; the
+     persistent bankroll total updates only after the announcement. */
   const settleRound = useCallback(
     (finalReels) => {
       const out = evaluatePaytable(finalReels.map((r) => r.symbol));
       setOutcome(out);
       if (out.pay) setBestHit((b) => Math.max(b, out.pay));
       if (out.tier === 3) setCode3s((c) => c + 1);
-      if (mode === "game" && out.pay) setQuarters((q) => q + out.pay);
       setPhase("resolved");
+      if (out.pay) {
+        setAnnounce(out);
+        const dur = reduced ? 1200 : out.tier === 3 ? 2600 : out.tier === 2 ? 2100 : 1600;
+        after(dur, () => {
+          setAnnounce(null);
+          if (mode === "game") setQuarters((q) => q + out.pay);
+        });
+      }
     },
-    [mode]
+    [mode, reduced, after]
   );
 
   const pick = useCallback(
@@ -752,29 +820,54 @@ export default function ScreamingSirens() {
       } else {
         setHeat(0);
       }
-      if (symbol === "star" || symbol === "seven") {
-        setFlashWin(true);
-        after(T.FLASH_MS, () => setFlashWin(false));
-      }
-      if (activeReel < 2) {
-        after(T.BEAT_MS, () => {
-          setActiveReel((r) => r + 1);
-          lockRef.current = false;
+      /* the answer triggers anticipation, not resolution: the reel keeps
+         rolling, visibly decelerates, then slots into the decided symbol
+         and locks. The next question waits until the result is seen. */
+      const reelIdx = activeReel;
+      const land = () => {
+        setLanding(null);
+        setJustLanded(reelIdx);
+        after(500, () => setJustLanded(null));
+        setReels((rs) => rs.map((r, idx) => (idx === reelIdx ? { ...r, landed: true } : r)));
+        if (symbol === "star" || symbol === "seven") {
+          setFlashWin(true);
+          after(T.FLASH_MS, () => setFlashWin(false));
+        }
+        after(reduced ? 300 : T.REGISTER_MS, () => {
+          if (reelIdx < 2) {
+            setActiveReel(reelIdx + 1);
+            lockRef.current = false;
+          } else {
+            after(reduced ? 200 : T.DECIDE_MS - T.REGISTER_MS, () => {
+              settleRound(next);
+              lockRef.current = false;
+            });
+          }
         });
-      } else {
-        after(T.RESOLVE_MS, () => {
-          settleRound(next);
-          lockRef.current = false;
-        });
+      };
+      if (reduced) {
+        land(); // reduced motion: no deceleration theater
+        return;
       }
+      const pos = (spinTick + reelIdx) % CYCLE.length;
+      let delay = 0;
+      T.LAND_GAPS.slice(0, -1).forEach((g, k) => {
+        delay += g;
+        after(delay, () =>
+          setLanding({ reel: reelIdx, face: CYCLE[(pos + k + 1) % CYCLE.length] })
+        );
+      });
+      delay += T.LAND_GAPS[T.LAND_GAPS.length - 1];
+      after(delay, land);
     },
-    [phase, reels, activeReel, after, settleRound]
+    [phase, reels, activeReel, spinTick, reduced, after, settleRound]
   );
 
   const runItBack = useCallback(() => {
     if (phase !== "resolved" || gameOver) return;
     setReels([]);
     setActiveReel(0);
+    setAnnounce(null); // pending payout still lands via its timer
     setPhase("idle");
   }, [phase, gameOver]);
 
@@ -791,6 +884,8 @@ export default function ScreamingSirens() {
     setReels([]);
     setActiveReel(0);
     setOutcome(null);
+    setAnnounce(null);
+    setLanding(null);
     setGameOver(false);
     setPhase("idle");
   }, []);
@@ -800,18 +895,38 @@ export default function ScreamingSirens() {
     setMode((m) => (m === "game" ? "practice" : "game"));
   }, [phase, gameOver]);
 
-  /* windshield faces (symbols only — never question text) */
+  /* windshield faces (symbols only — never question text). Unresolved
+     reels keep cycling through the real symbol set until answered. */
   const faces = useMemo(() => {
     return [0, 1, 2].map((i) => {
-      if (phase === "spinning") return { kind: "spin" };
       const r = reels[i];
       if (!r) return { kind: "idle" };
-      if (r.symbol) return { kind: r.symbol }; // locked reels stay visible in place
-      if (phase === "answering")
-        return i === activeReel ? { kind: reduced ? "pending" : "live" } : { kind: "future" };
+      if (r.landed) return { kind: r.symbol }; // locked results stay in place
+      if (landing && landing.reel === i)
+        return { kind: "cycle", sym: landing.face, mode: "landing" };
+      if (phase === "spinning")
+        return { kind: "cycle", sym: CYCLE[(spinTick + i) % CYCLE.length], mode: "spin" };
+      if (phase === "answering") {
+        if (i === activeReel)
+          return reduced
+            ? { kind: "pending" }
+            : { kind: "cycle", sym: CYCLE[(spinTick + i) % CYCLE.length], mode: "live" };
+        return reduced
+          ? { kind: "future" }
+          : { kind: "cycle", sym: CYCLE[(Math.floor(spinTick / 2) + i) % CYCLE.length], mode: "wait" };
+      }
       return { kind: "idle" };
     });
-  }, [phase, reels, activeReel, reduced]);
+  }, [phase, reels, activeReel, spinTick, landing, reduced]);
+
+  /* which symbol is doing the paying, for the winner glow */
+  const payingSym =
+    phase === "resolved" && outcome && outcome.pay > 0
+      ? {
+          seven3: "seven", seven2: "seven", star3: "star", star2: "star",
+          pulse3: "pulse", pulse2: "pulse", quarter3: "quarter", quarter2: "quarter",
+        }[outcome.key] || "nonflat"
+      : null;
 
   const accuracy = answered ? Math.round((100 * correct) / answered) + "%" : "—";
 
@@ -849,7 +964,11 @@ export default function ScreamingSirens() {
   return (
     <div className="ss-stage">
       <style>{CSS}</style>
-      <div className={`rig heat-${tier}${rave ? " code3" : ""}${reduced ? " rm" : ""}`}>
+      <div
+        className={`rig heat-${tier}${rave ? " code3" : ""}${
+          announce ? " win-t" + announce.tier : ""
+        }${reduced ? " rm" : ""}`}
+      >
         <div className="frame">
           <div className="shell">
             <MarkerLights />
@@ -864,15 +983,43 @@ export default function ScreamingSirens() {
                   coin
                 />
               </div>
-              <div className="marquee">
-                <h1 className="title">
-                  SCREAMING SIRENS <AmbulanceBadge />
-                </h1>
-                <div className="sub">Paramedic Edition</div>
-                <span className="mq-div" aria-hidden="true" />
-                <div className="chap">Chapter 47</div>
-                <div className="chap2">Pediatrics</div>
-                <div className="plate">MEDIC 47</div>
+              <div className={"marquee" + (announce ? " won" : "")}>
+                {announce ? (
+                  /* the machine announces what this spin paid, front and center */
+                  <div className={"payout-announce t" + announce.tier} role="status">
+                    <div className="pa-label">
+                      {announce.tier === 3 ? "JACKPOT" : announce.tier === 2 ? "BIG WIN" : "WIN"}
+                    </div>
+                    <div className="pa-amount">
+                      <AnnounceCount pay={announce.pay} animate={!reduced && announce.pay > 1} />
+                    </div>
+                    {!reduced && announce.tier >= 2 && (
+                      <span className="coinburst" aria-hidden="true">
+                        {Array.from({ length: announce.tier === 3 ? 16 : 9 }).map((_, i) => (
+                          <i
+                            key={i}
+                            style={{
+                              "--dx": (Math.random() * 180 - 90).toFixed(0) + "px",
+                              "--dy": (-36 - Math.random() * 96).toFixed(0) + "px",
+                              "--dl": (Math.random() * 0.3).toFixed(2) + "s",
+                            }}
+                          />
+                        ))}
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <h1 className="title">
+                      SCREAMING SIRENS <AmbulanceBadge />
+                    </h1>
+                    <div className="sub">Paramedic Edition</div>
+                    <span className="mq-div" aria-hidden="true" />
+                    <div className="chap">Chapter 47</div>
+                    <div className="chap2">Pediatrics</div>
+                    <div className="plate">MEDIC 47</div>
+                  </>
+                )}
               </div>
               <div className="head-r">
                 <Gauge label="Siren heat" value={heat} hot={heat >= 3} />
@@ -893,9 +1040,23 @@ export default function ScreamingSirens() {
                   <i className="rivet r2" aria-hidden="true" />
                   <i className="rivet r3" aria-hidden="true" />
                   <i className="rivet r4" aria-hidden="true" />
-                  {faces.map((f, i) => (
-                    <Pane key={i} face={f} glyph={SPIN_GLYPHS[(spinTick + i) % SPIN_GLYPHS.length]} />
-                  ))}
+                  {faces.map((f, i) => {
+                    let extra = "";
+                    if (justLanded === i) extra += " snap";
+                    if (
+                      payingSym &&
+                      reels[i] &&
+                      reels[i].landed &&
+                      (payingSym === "nonflat"
+                        ? reels[i].symbol !== "flat"
+                        : reels[i].symbol === payingSym)
+                    )
+                      extra += " paying";
+                    return <Pane key={i} face={f} extra={extra} />;
+                  })}
+                  {phase === "resolved" && outcome && outcome.pay > 0 && (
+                    <span className="paylite" aria-hidden="true" />
+                  )}
                   {rave && !reduced && <div className="flare" aria-hidden="true" />}
                 </div>
                 {/* cowl: vents · action button · dome knob */}
@@ -1040,8 +1201,8 @@ const CSS = `
 /* jackpot: the whole cabinet glows and pulses — reserved for 3/3 */
 .rig.code3 .frame{ animation:cabglow .8s ease-in-out infinite; }
 @keyframes cabglow{
-  0%,100%{ box-shadow:0 26px 60px rgba(0,0,0,.85), 0 0 46px rgba(225,29,46,.45), 0 0 100px rgba(255,179,0,.24); }
-  50%{ box-shadow:0 26px 60px rgba(0,0,0,.85), 0 0 80px rgba(225,29,46,.65), 0 0 150px rgba(255,179,0,.42); }
+  0%,100%{ box-shadow:0 26px 60px rgba(0,0,0,.85), 0 0 46px rgba(53,208,127,.5), 0 0 100px rgba(255,214,10,.26); }
+  50%{ box-shadow:0 26px 60px rgba(0,0,0,.85), 0 0 84px rgba(53,208,127,.7), 0 0 150px rgba(255,214,10,.46); }
 }
 
 /* ── brushed-metal vehicle face with specular sweep + gold coach line ── */
@@ -1195,6 +1356,69 @@ const CSS = `
   text-transform:uppercase; color:var(--amber);
   text-shadow:0 0 8px rgba(255,179,0,.7), 0 1px 1px rgba(0,0,0,.7);
 }
+/* ── marquee payout announcement: the win zone goes green ── */
+.marquee.won{
+  background:
+    radial-gradient(85% 62% at 50% 40%, rgba(53,208,127,.2), transparent 68%),
+    radial-gradient(120% 90% at 50% 108%, rgba(20,110,70,.35), transparent 60%),
+    linear-gradient(170deg, #10321f 0%, #0a2416 42%, #03110a 100%);
+  border-color:#2c6b48;
+  box-shadow:
+    inset 0 0 0 2px rgba(150,240,190,.14),
+    inset 0 5px 18px rgba(0,0,0,.9),
+    inset 0 0 70px rgba(30,150,90,.3),
+    0 1px 0 rgba(255,255,255,.55),
+    0 0 0 2px rgba(15,20,26,.9),
+    0 0 24px rgba(53,208,127,.3);
+}
+.payout-announce{ position:relative; display:flex; flex-direction:column; align-items:center; gap:2px; padding:10px 0; }
+.pa-label{
+  font-family:var(--disp); font-weight:800; font-size:21px; letter-spacing:.24em;
+  color:#9ef5c1; text-shadow:0 0 8px rgba(53,208,127,.95), 0 0 24px rgba(53,208,127,.55), 0 1px 1px rgba(0,0,0,.7);
+}
+.pa-amount{
+  font-family:var(--disp); font-weight:800; font-size:clamp(34px,10vw,46px); line-height:1.05;
+  color:#5fe89a; text-shadow:0 0 10px rgba(53,208,127,.95), 0 0 32px rgba(53,208,127,.55), 0 2px 2px rgba(0,0,0,.8);
+  font-variant-numeric:tabular-nums;
+}
+.payout-announce.t2 .pa-label{ font-size:24px; }
+.payout-announce.t3 .pa-label{
+  font-size:26px; color:#ffe98a;
+  text-shadow:0 0 10px rgba(255,214,10,.95), 0 0 28px rgba(53,208,127,.8), 0 1px 1px rgba(0,0,0,.7);
+  animation:bannerpulse .7s ease-in-out infinite;
+}
+.payout-announce.t3 .pa-amount{
+  color:#fff3c4; text-shadow:0 0 12px rgba(255,214,10,.95), 0 0 36px rgba(53,208,127,.7), 0 2px 2px rgba(0,0,0,.8);
+}
+.coinburst{ position:absolute; inset:-20px; pointer-events:none; }
+.coinburst i{
+  position:absolute; left:50%; top:64%; width:11px; height:11px; border-radius:50%; opacity:0;
+  background:radial-gradient(circle at 35% 30%, #fff3c4, #e0a400 55%, #8a5d00);
+  box-shadow:0 0 6px rgba(255,214,10,.7);
+  animation:coinfly .95s ease-out var(--dl) forwards;
+}
+@keyframes coinfly{
+  0%{ opacity:0; transform:translate(0,0) scale(.4); }
+  18%{ opacity:1; }
+  100%{ opacity:0; transform:translate(var(--dx), var(--dy)) scale(1); }
+}
+/* mid/large wins shift the machine lights green/gold while announcing */
+.rig.win-t2{ --flash:.3s; }
+.rig.win-t2 .lb-cluster.red .led,.rig.win-t3 .lb-cluster.red .led,.rig.code3 .lb-cluster.red .led{
+  color:#35d07f;
+  background:
+    radial-gradient(45% 30% at 32% 18%, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(circle at 50% 25%, #9ef5c1, #1faf63 55%, #0b5c33);
+}
+.rig.win-t2 .lb-cluster.blue .led,.rig.win-t3 .lb-cluster.blue .led,.rig.code3 .lb-cluster.blue .led{
+  color:#ffd60a;
+  background:
+    radial-gradient(45% 30% at 32% 18%, rgba(255,255,255,.9), transparent 60%),
+    radial-gradient(circle at 50% 25%, #ffe98a, #e0a400 55%, #8a5d00);
+}
+.rig.win-t2 .strip.left,.rig.win-t3 .strip.left,.rig.code3 .strip.left{ color:#35d07f; box-shadow:0 0 15px rgba(53,208,127,.7), inset 0 0 4px rgba(0,0,0,.7), 0 1px 0 rgba(255,255,255,.25); }
+.rig.win-t2 .strip.right,.rig.win-t3 .strip.right,.rig.code3 .strip.right{ color:#ffd60a; box-shadow:0 0 15px rgba(255,214,10,.65), inset 0 0 4px rgba(0,0,0,.7), 0 1px 0 rgba(255,255,255,.25); }
+
 .plate{
   margin-top:8px; font-family:var(--disp); font-weight:800; font-size:11px; letter-spacing:.14em;
   color:#141b22; padding:3px 11px; border-radius:5px;
@@ -1333,10 +1557,39 @@ const CSS = `
   font-family:var(--disp); font-weight:800; font-size:clamp(22px,7vw,31px); color:var(--amber);
   text-shadow:0 0 8px rgba(255,179,0,.7), 0 0 24px rgba(255,140,0,.4), 0 2px 2px rgba(0,0,0,.8);
 }
-.glyph{
-  font-size:clamp(26px,8vw,38px); color:#bcd6f2; filter:blur(2px); opacity:.85;
-  text-shadow:0 0 14px rgba(120,180,240,.6);
+/* cycling faces: real symbols rolling past, entrance animations muted */
+.symcycle{ display:flex; align-items:center; justify-content:center; width:100%; height:100%; filter:blur(1.6px); opacity:.85; }
+.pane-cycle .coin.lock,.pane-cycle .coin,.pane-cycle .pulsekg,.pane-cycle .seven7,
+.pane-cycle .flatx .ecg,.pane-cycle .flatx .xs,.pane-cycle .pulsekg .pk,.pane-cycle .sol.lit{ animation:none !important; }
+.pane-cycle .flatx .ecg,.pane-cycle .flatx .xs,.pane-cycle .pulsekg .pk{ stroke-dashoffset:0; }
+.pane-cycle .seven7{ text-shadow:0 0 10px rgba(255,157,46,.6); }
+.cyc-wait .symcycle{ filter:blur(1.3px); opacity:.42; }
+.cyc-landing .symcycle{ filter:blur(.7px); opacity:.95; }
+
+/* lock snap when a reel lands its final symbol */
+.pane.snap{ animation:panesnap .42s cubic-bezier(.2,1.5,.4,1); }
+@keyframes panesnap{
+  0%{ transform:scale(1.06) translateY(-3px); }
+  55%{ transform:scale(.98) translateY(1.5px); }
+  100%{ transform:scale(1) translateY(0); }
 }
+
+/* winner glow on the symbols that paid (green = win identity) */
+.pane.paying{ animation:payglow 1s ease-in-out 2; }
+@keyframes payglow{
+  0%,100%{ box-shadow:inset 0 7px 18px rgba(0,0,0,.95); }
+  50%{ box-shadow:inset 0 7px 18px rgba(0,0,0,.95), 0 0 24px rgba(53,208,127,.85), inset 0 0 28px rgba(53,208,127,.3); }
+}
+
+/* brief center payline highlight on any paying spin */
+.paylite{
+  position:absolute; left:6%; right:6%; top:50%; height:4px; margin-top:-2px; z-index:2;
+  border-radius:3px; opacity:0; pointer-events:none;
+  background:linear-gradient(90deg, transparent, #35d07f 18%, #b6ffce 50%, #35d07f 82%, transparent);
+  box-shadow:0 0 16px rgba(53,208,127,.85);
+  animation:paylite 1.4s ease-out forwards;
+}
+@keyframes paylite{ 0%{ opacity:0; } 18%{ opacity:1; } 70%{ opacity:.9; } 100%{ opacity:0; } }
 .q{ font-family:var(--disp); font-weight:800; font-size:clamp(30px,9vw,46px); }
 .q.bright{ color:#ffe2b8; text-shadow:0 0 8px rgba(255,179,0,.95), 0 0 24px rgba(255,157,46,.7); animation:qpulse 1.1s ease-in-out infinite; }
 .q.dim{ color:#9cc6ff; opacity:.55; text-shadow:0 0 14px rgba(90,150,220,.6); animation:qwait 2.8s ease-in-out infinite; }
@@ -1402,7 +1655,7 @@ const CSS = `
 
 .flare{
   position:absolute; inset:-40px; pointer-events:none; border-radius:50%;
-  background:radial-gradient(circle, rgba(255,179,0,.55) 0%, rgba(225,29,46,.28) 40%, transparent 70%);
+  background:radial-gradient(circle, rgba(255,214,10,.5) 0%, rgba(53,208,127,.32) 40%, transparent 70%);
   animation:flare 1.1s ease-out forwards;
 }
 @keyframes flare{ 0%{ opacity:0; transform:scale(.3);} 35%{opacity:1;} 100%{ opacity:0; transform:scale(1.5);} }
@@ -1623,19 +1876,19 @@ const CSS = `
   color:#fff; font-size:24px;
   background:
     radial-gradient(120% 90% at 50% -12%, rgba(255,255,255,.35), transparent 45%),
-    linear-gradient(180deg, #ff3947, var(--red) 55%, #a30f1c);
-  border:1px solid #7c0812;
-  box-shadow:0 0 24px rgba(225,29,46,.45), inset 0 1px 0 rgba(255,255,255,.4);
+    linear-gradient(180deg, #2fce7c, #17a35d 55%, #0b6b3a);
+  border:1px solid #0a5530;
+  box-shadow:0 0 24px rgba(53,208,127,.5), inset 0 1px 0 rgba(255,255,255,.4);
   text-shadow:0 0 14px rgba(255,214,10,.95), 0 1px 1px rgba(0,0,0,.6);
   animation:bannerpulse .8s ease-in-out infinite;
 }
 @keyframes bannerpulse{ 0%,100%{ filter:brightness(1);} 50%{ filter:brightness(1.3);} }
-.banner.s2{ color:#0e4a9c; font-size:20px; background:rgba(42,134,255,.14); border:1.5px solid rgba(42,134,255,.6); box-shadow:0 0 14px rgba(42,134,255,.2); }
-.banner.s1{ color:#1d5ba8; font-size:18px; background:rgba(42,134,255,.07); border:1px solid rgba(42,134,255,.35); }
+.banner.s2{ color:#0c6b3c; font-size:20px; background:rgba(53,208,127,.15); border:1.5px solid rgba(23,163,93,.6); box-shadow:0 0 14px rgba(53,208,127,.25); }
+.banner.s1{ color:#177a48; font-size:18px; background:rgba(53,208,127,.08); border:1px solid rgba(23,163,93,.35); }
 .banner.s0{ color:var(--ink2); font-size:17px; background:#eef2f5; border:1px solid #c6cfd8; }
 .payline{
   margin-top:9px; font-family:var(--disp); font-weight:800; font-size:20px; letter-spacing:.08em;
-  color:#9c6b00; text-shadow:0 1px 0 rgba(255,255,255,.7);
+  color:#0c6b3c; text-shadow:0 1px 0 rgba(255,255,255,.7);
 }
 .sweep{ margin-top:8px; font-size:14px; font-weight:600; color:#9c6b00; }
 .missrev{ margin-top:15px; text-align:left; }
@@ -1796,8 +2049,10 @@ const CSS = `
   .mk,.led,.strip,.q.bright,.q.dim,.pane-live,.pane-pending,.banner.s3,
   .bayinset.winflash,.sol.lit,.flatx .ecg,.flatx .xs,.flare,
   .rig.code3 .frame,.marquee::before,.title,.respond,
-  .coin.lock,.pulsekg,.pulsekg .pk,.seven7{ animation:none !important; }
+  .coin.lock,.pulsekg,.pulsekg .pk,.seven7,
+  .pane.snap,.pane.paying,.paylite,.coinburst i,.payout-announce.t3 .pa-label{ animation:none !important; }
   .flatx .ecg,.flatx .xs,.pulsekg .pk{ stroke-dashoffset:0; }
+  .paylite,.coinburst{ display:none; }
   .flare,.marquee::before{ display:none; }
   .glyph{ filter:none; }
   .btn,.opt{ transition:none; }
