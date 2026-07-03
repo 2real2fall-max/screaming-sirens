@@ -444,12 +444,14 @@ export default function ScreamingSirens() {
   const tier = heatTier(heat);
   const rave = phase === "resolved" && lastStars === 3;
 
-  /* spin glyph ticker */
+  /* spin glyph ticker — also keeps the active reel rolling while the
+     player answers (it locks on answer); static under reduced motion */
+  const ticking = phase === "spinning" || (phase === "answering" && !reduced);
   useEffect(() => {
-    if (phase !== "spinning") return;
+    if (!ticking) return;
     const iv = setInterval(() => setSpinTick((t) => t + 1), T.TICK_MS);
     return () => clearInterval(iv);
-  }, [phase]);
+  }, [ticking]);
 
   const respond = useCallback(() => {
     if (phase !== "idle" || quarters < SPIN_COST || BANK.length < 3) return; // spec §17
@@ -534,10 +536,11 @@ export default function ScreamingSirens() {
       if (!r) return { kind: "idle" };
       if (r.result === "star") return { kind: "star" };
       if (r.result === "flat") return { kind: "flat" };
-      if (phase === "answering") return i === activeReel ? { kind: "pending" } : { kind: "future" };
+      if (phase === "answering")
+        return i === activeReel ? { kind: reduced ? "pending" : "spin" } : { kind: "future" };
       return { kind: "idle" };
     });
-  }, [phase, reels, activeReel]);
+  }, [phase, reels, activeReel, reduced]);
 
   const accuracy = answered ? Math.round((100 * correct) / answered) + "%" : "—";
 
