@@ -150,6 +150,34 @@ function drawThree(bank) {
   return idx.slice(0, Math.min(3, idx.length)).map((i) => shuffleQuestion(bank[i]));
 }
 
+/* Counts a displayed number up one step at a time on increases (the
+   quarter counter "ticks up on payout", spec §11); decreases apply
+   instantly. Disabled → always instant. */
+function useCountUp(target, enabled, msPerStep = 80) {
+  const [val, setVal] = useState(target);
+  const prev = useRef(target);
+  useEffect(() => {
+    const from = prev.current;
+    prev.current = target;
+    if (!enabled || target <= from) {
+      setVal(target);
+      return;
+    }
+    setVal(from);
+    const iv = setInterval(() => {
+      setVal((v) => {
+        if (v + 1 >= target) {
+          clearInterval(iv);
+          return target;
+        }
+        return v + 1;
+      });
+    }, msPerStep);
+    return () => clearInterval(iv);
+  }, [target, enabled]);
+  return val;
+}
+
 function usePrefersReducedMotion() {
   const [reduced, setReduced] = useState(
     () => typeof window !== "undefined" &&
@@ -345,7 +373,31 @@ function QuestionCard({ reel, index, onPick, locked }) {
   );
 }
 
-function Result({ reels, stars, payout }) {
+/* Payout count-up for the result card — animates only for multi-quarter
+   wins so small outcomes stay modest; the jackpot gets the full climb. */
+function PayCount({ amount, animate }) {
+  const [n, setN] = useState(animate ? 0 : amount);
+  useEffect(() => {
+    if (!animate) {
+      setN(amount);
+      return;
+    }
+    setN(0);
+    const iv = setInterval(() => {
+      setN((v) => {
+        if (v + 1 >= amount) {
+          clearInterval(iv);
+          return amount;
+        }
+        return v + 1;
+      });
+    }, 90);
+    return () => clearInterval(iv);
+  }, [amount, animate]);
+  return <>{n}</>;
+}
+
+function Result({ reels, stars, payout, reduced }) {
   const misses = reels
     .map((r, i) => ({ ...r, reelNo: i + 1 }))
     .filter((r) => r.result === "flat");
@@ -356,7 +408,8 @@ function Result({ reels, stars, payout }) {
       </div>
       {payout > 0 && (
         <div className="payline">
-          +{payout} quarter{payout === 1 ? "" : "s"}
+          +<PayCount amount={payout} animate={!reduced && payout > 1} /> quarter
+          {payout === 1 ? "" : "s"}
         </div>
       )}
       {stars === 3 && <div className="sweep">Clean trifecta — all three sourced cold. ★</div>}
@@ -443,15 +496,15 @@ export default function ScreamingSirens() {
   const broke = quarters < SPIN_COST;
   const tier = heatTier(heat);
   const rave = phase === "resolved" && lastStars === 3;
+  const shownQuarters = useCountUp(quarters, !reduced);
 
-  /* spin glyph ticker — also keeps the active reel rolling while the
-     player answers (it locks on answer); static under reduced motion */
-  const ticking = phase === "spinning" || (phase === "answering" && !reduced);
+  /* spin glyph ticker (SPINNING only — reels hand off to the ? faces
+     for ANSWERING, per spec §7) */
   useEffect(() => {
-    if (!ticking) return;
+    if (phase !== "spinning") return;
     const iv = setInterval(() => setSpinTick((t) => t + 1), T.TICK_MS);
     return () => clearInterval(iv);
-  }, [ticking]);
+  }, [phase]);
 
   const respond = useCallback(() => {
     if (phase !== "idle" || quarters < SPIN_COST || BANK.length < 3) return; // spec §17
@@ -536,11 +589,10 @@ export default function ScreamingSirens() {
       if (!r) return { kind: "idle" };
       if (r.result === "star") return { kind: "star" };
       if (r.result === "flat") return { kind: "flat" };
-      if (phase === "answering")
-        return i === activeReel ? { kind: reduced ? "pending" : "spin" } : { kind: "future" };
+      if (phase === "answering") return i === activeReel ? { kind: "pending" } : { kind: "future" };
       return { kind: "idle" };
     });
-  }, [phase, reels, activeReel, reduced]);
+  }, [phase, reels, activeReel]);
 
   const accuracy = answered ? Math.round((100 * correct) / answered) + "%" : "—";
 
@@ -592,7 +644,7 @@ export default function ScreamingSirens() {
             <div className="head">
               <div className="head-l">
                 <span className="corner-lamp" aria-hidden="true" />
-                <Gauge label="Quarters" value={quarters} coin />
+                <Gauge label="Quarters" value={shownQuarters} coin />
               </div>
               <div className="marquee">
                 <h1 className="title">
@@ -653,7 +705,7 @@ export default function ScreamingSirens() {
                   />
                 )}
                 {phase === "resolved" && (
-                  <Result reels={reels} stars={lastStars} payout={lastPayout} />
+                  <Result reels={reels} stars={lastStars} payout={lastPayout} reduced={reduced} />
                 )}
                 <button type="button" className="endshift" onClick={() => setReportOpen(true)}>
                   End shift · view report
@@ -731,6 +783,12 @@ const CSS = `
 }
 .rig.heat-warm .frame{ box-shadow:0 20px 50px rgba(0,0,0,.75), 0 0 38px rgba(255,179,0,.16); }
 .rig.heat-blazing .frame{ box-shadow:0 20px 50px rgba(0,0,0,.75), 0 0 58px rgba(255,140,0,.32); }
+/* jackpot: the whole cabinet glows and pulses — reserved for 3/3 */
+.rig.code3 .frame{ animation:cabglow .8s ease-in-out infinite; }
+@keyframes cabglow{
+  0%,100%{ box-shadow:0 20px 50px rgba(0,0,0,.75), 0 0 46px rgba(225,29,46,.4), 0 0 90px rgba(255,179,0,.22); }
+  50%{ box-shadow:0 20px 50px rgba(0,0,0,.75), 0 0 70px rgba(225,29,46,.6), 0 0 130px rgba(255,179,0,.38); }
+}
 
 /* silver vehicle face */
 .shell{
@@ -931,8 +989,25 @@ const CSS = `
 }
 .q{ font-family:var(--disp); font-weight:800; font-size:clamp(30px,9vw,44px); }
 .q.bright{ color:#ffe2b8; text-shadow:0 0 8px rgba(255,179,0,.9), 0 0 20px rgba(255,157,46,.6); animation:qpulse 1.1s ease-in-out infinite; }
-.q.dim{ color:var(--white); opacity:.22; }
+.q.dim{ color:#9cc6ff; opacity:.55; text-shadow:0 0 12px rgba(90,150,220,.55); animation:qwait 2.8s ease-in-out infinite; }
 @keyframes qpulse{ 0%,100%{opacity:1;} 50%{opacity:.55;} }
+@keyframes qwait{ 0%,100%{opacity:.4;} 50%{opacity:.65;} }
+
+/* the reel being answered right now: brighter pane, subtle pulse, wake-in */
+.pane-pending{
+  border-color:var(--amber);
+  background:
+    linear-gradient(rgba(160,190,230,.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(160,190,230,.07) 1px, transparent 1px),
+    linear-gradient(165deg, #16293c 0%, #0e1c2c 45%, #081422 100%);
+  background-size:15px 15px, 15px 15px, 100% 100%;
+  animation:panewake .3s ease-out, panepulse 1.6s ease-in-out .3s infinite;
+}
+@keyframes panewake{ 0%{ filter:brightness(.7); } 100%{ filter:brightness(1); } }
+@keyframes panepulse{
+  0%,100%{ box-shadow:inset 0 5px 13px rgba(0,0,0,.9), 0 0 10px rgba(255,179,0,.35); }
+  50%{ box-shadow:inset 0 5px 13px rgba(0,0,0,.9), 0 0 20px rgba(255,179,0,.65); }
+}
 
 .sol{ width:72%; height:auto; }
 .sol .sol-bar{ fill:var(--blue); }
@@ -1093,9 +1168,9 @@ const CSS = `
   animation:bannerpulse .8s ease-in-out infinite;
 }
 @keyframes bannerpulse{ 0%,100%{ filter:brightness(1);} 50%{ filter:brightness(1.3);} }
-.banner.s2{ color:#0e4a9c; background:rgba(42,134,255,.12); border:1px solid rgba(42,134,255,.55); }
-.banner.s1{ color:#0e4a9c; background:rgba(42,134,255,.08); border:1px solid rgba(42,134,255,.4); }
-.banner.s0{ color:var(--ink2); background:#eef2f5; border:1px solid #c6cfd8; }
+.banner.s2{ color:#0e4a9c; font-size:20px; background:rgba(42,134,255,.14); border:1.5px solid rgba(42,134,255,.6); box-shadow:0 0 14px rgba(42,134,255,.2); }
+.banner.s1{ color:#1d5ba8; font-size:18px; background:rgba(42,134,255,.07); border:1px solid rgba(42,134,255,.35); }
+.banner.s0{ color:var(--ink2); font-size:17px; background:#eef2f5; border:1px solid #c6cfd8; }
 .payline{
   margin-top:9px; font-family:var(--disp); font-weight:800; font-size:19px; letter-spacing:.08em;
   color:#9c6b00;
@@ -1207,8 +1282,8 @@ const CSS = `
 
 /* ── reduced motion (spec §14): calm, fully playable ── */
 @media (prefers-reduced-motion: reduce){
-  .mk,.led,.strip,.q.bright,.banner.s3,.bayinset.winflash,.sol.lit,
-  .flatx .ecg,.flatx .xs,.flare{ animation:none !important; }
+  .mk,.led,.strip,.q.bright,.q.dim,.pane-pending,.banner.s3,.bayinset.winflash,.sol.lit,
+  .flatx .ecg,.flatx .xs,.flare,.rig.code3 .frame{ animation:none !important; }
   .flatx .ecg,.flatx .xs{ stroke-dashoffset:0; }
   .flare{ display:none; }
   .glyph{ filter:none; }
