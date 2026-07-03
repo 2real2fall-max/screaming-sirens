@@ -3,9 +3,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 /* ════════════════════════════════════════════════════════════════════════
    SCREAMING SIRENS — Paramedic Edition · Ch 47 (Pediatrics)
    Single-file React component. Built to the v2.1 design spec.
-   The whole unit renders as the front of an ambulance: light bar on the
-   windshield frame, three reel panes as windshield glass, grille + bumper
-   RESPOND button, white run-sheet card in the body.
+   The whole unit renders as the front of an ambulance: dominant marquee
+   screen up top, light-bar pod between marquee and cab, three reel panes
+   as windshield glass inside a silver cab with the red action button in
+   its cowl, and a white run-sheet card in the body between dark chevron
+   rails.
    Slot-cadence presentation, skill-only rewards: the Star of Life lights
    exclusively on a correct answer. No chance element, no dark patterns.
    Session-only state (React hooks); no localStorage/sessionStorage.
@@ -258,7 +260,7 @@ function LightBar({ rave }) {
 function MarkerLights() {
   return (
     <div className="markers" aria-hidden="true">
-      {Array.from({ length: 5 }).map((_, i) => (
+      {Array.from({ length: 6 }).map((_, i) => (
         <span key={i} className="mk" style={{ animationDelay: `${i * 0.28}s` }} />
       ))}
     </div>
@@ -278,9 +280,9 @@ function Pane({ face, glyph }) {
   );
 }
 
-function Gauge({ label, value, hot, amber, coin }) {
+function Gauge({ label, value, hot, coin }) {
   return (
-    <div className={"gauge" + (hot ? " hot" : "") + (amber ? " amber" : "")}>
+    <div className={"gauge" + (hot ? " hot" : "")}>
       <span className="g-value">
         {coin && <i className="g-coin" aria-hidden="true" />}
         {value}
@@ -308,10 +310,12 @@ function QuestionCard({ reel, index, onPick, locked }) {
   return (
     <div className="qcard">
       <div className="q-head">
-        <span className={"tag " + (q.dispatch ? "dispatch" : "protocol")}>
-          {q.dispatch ? "Dispatch" : "Protocol check"}
+        <span className="q-title">
+          <span className={"tagword " + (q.dispatch ? "dispatch" : "protocol")}>
+            {q.dispatch ? "Dispatch" : "Protocol check"}:
+          </span>{" "}
+          {cat}
         </span>
-        <span className="cat">{cat}</span>
         {HIGH_YIELD.has(q.category) && <span className="hy">HIGH-YIELD</span>}
       </div>
       <p className="prompt">
@@ -577,97 +581,102 @@ export default function ScreamingSirens() {
     <div className="ss-stage">
       <style>{CSS}</style>
       <div className={`rig heat-${tier}${rave ? " code3" : ""}${reduced ? " rm" : ""}`}>
-        <div className="shell">
-          <MarkerLights />
+        <div className="frame">
+          <div className="shell">
+            <MarkerLights />
 
-          {/* box-body header: lamp + quarters · marquee screen · stat stack */}
-          <div className="head">
-            <div className="head-l">
-              <span className="corner-lamp" aria-hidden="true" />
-              <Gauge label="Quarters" value={quarters} amber coin />
+            {/* box-body header: lamp + quarters · dominant marquee · stat stack */}
+            <div className="head">
+              <div className="head-l">
+                <span className="corner-lamp" aria-hidden="true" />
+                <Gauge label="Quarters" value={quarters} coin />
+              </div>
+              <div className="marquee">
+                <h1 className="title">
+                  SCREAMING SIRENS <AmbulanceBadge />
+                </h1>
+                <div className="sub">Paramedic Edition</div>
+                <span className="mq-div" aria-hidden="true" />
+                <div className="chap">Chapter 47</div>
+                <div className="chap2">Pediatrics</div>
+                <div className="plate">MEDIC 47</div>
+              </div>
+              <div className="head-r">
+                <Gauge label="Siren heat" value={heat} hot={heat >= 3} />
+                <Gauge label="Code 3s" value={code3s} />
+                <Gauge label="Accuracy" value={accuracy} />
+              </div>
             </div>
-            <div className="marquee">
-              <h1 className="title">
-                SCREAMING SIRENS <AmbulanceBadge />
-              </h1>
-              <div className="sub">Paramedic Edition</div>
-              <div className="chap">Ch 47 — Pediatrics</div>
-              <div className="plate">MEDIC 47</div>
-            </div>
-            <div className="head-r">
-              <Gauge label="Siren heat" value={heat} hot={heat >= 3} />
-              <Gauge label="Code 3s" value={code3s} />
-              <Gauge label="Accuracy" value={accuracy} />
-            </div>
-          </div>
 
-          {/* cab: light bar mounted on the windshield frame */}
-          <LightBar rave={rave} />
-          <div className={"cabface" + (flashWin ? " winflash" : "")}>
-            <span className="strip left" aria-hidden="true" />
-            <div className="windshields">
-              {faces.map((f, i) => (
-                <Pane key={i} face={f} glyph={SPIN_GLYPHS[(spinTick + i) % SPIN_GLYPHS.length]} />
-              ))}
-            </div>
-            <span className="strip right" aria-hidden="true" />
-            {rave && !reduced && <div className="flare" aria-hidden="true" />}
-          </div>
+            {/* light-bar pod between marquee and cab */}
+            <LightBar rave={rave} />
 
-          {/* hood: grille slats, bumper button, turn lamps */}
-          <div className="hood">
-            <div className="grille" aria-hidden="true" />
-            <div className="console">
-              {consoleBtn}
-              <span className="dome-knob" aria-hidden="true" />
+            {/* cab zone: pillar strips outside the silver cab */}
+            <div className="cabzone">
+              <span className="strip left" aria-hidden="true" />
+              <div className="cab">
+                <div className={"bayinset" + (flashWin ? " winflash" : "")}>
+                  {faces.map((f, i) => (
+                    <Pane key={i} face={f} glyph={SPIN_GLYPHS[(spinTick + i) % SPIN_GLYPHS.length]} />
+                  ))}
+                  {rave && !reduced && <div className="flare" aria-hidden="true" />}
+                </div>
+                {/* cowl: vents · action button · dome knob */}
+                <div className="console">
+                  <span className="vents" aria-hidden="true" />
+                  {consoleBtn}
+                  <span className="dome-knob" aria-hidden="true" />
+                </div>
+                <div className="hood-lamps">
+                  <span className="turn" aria-hidden="true" />
+                  <div className="subtext" aria-live="polite">{subtext}</div>
+                  <span className="turn" aria-hidden="true" />
+                </div>
+              </div>
+              <span className="strip right" aria-hidden="true" />
             </div>
-            <div className="hood-lamps">
-              <span className="turn" aria-hidden="true" />
-              <div className="subtext" aria-live="polite">{subtext}</div>
-              <span className="turn" aria-hidden="true" />
-            </div>
-          </div>
 
-          {/* body: white run-sheet card between hi-vis chevrons */}
-          <div className="bay">
-            <span className="chevcol" aria-hidden="true" />
-            <div className="sheet">
-              {(phase === "idle" || phase === "spinning") && <Paytable />}
-              {phase === "answering" && reels[activeReel] && (
-                <QuestionCard
-                  reel={reels[activeReel]}
-                  index={activeReel}
-                  onPick={pick}
-                  locked={reels[activeReel].result !== null}
-                />
+            {/* body: white run-sheet card between dark chevron rails */}
+            <div className="bay">
+              <span className="chevcol" aria-hidden="true" />
+              <div className="sheet">
+                {(phase === "idle" || phase === "spinning") && <Paytable />}
+                {phase === "answering" && reels[activeReel] && (
+                  <QuestionCard
+                    reel={reels[activeReel]}
+                    index={activeReel}
+                    onPick={pick}
+                    locked={reels[activeReel].result !== null}
+                  />
+                )}
+                {phase === "resolved" && (
+                  <Result reels={reels} stars={lastStars} payout={lastPayout} />
+                )}
+                <button type="button" className="endshift" onClick={() => setReportOpen(true)}>
+                  End shift · view report
+                </button>
+              </div>
+              <span className="chevcol flip" aria-hidden="true" />
+            </div>
+
+            <div className="bumper" aria-hidden="true">
+              <span className="tail" />
+              <span className="chev" />
+              <span className="tail" />
+            </div>
+
+            <div className="footer">
+              {BANK_IS_PLACEHOLDER && (
+                <p className="demo-note">
+                  ⚠ Demo content — the approved Chapter 47 bank file is not loaded; the records
+                  shown are clearly marked placeholders, not medical content.
+                </p>
               )}
-              {phase === "resolved" && (
-                <Result reels={reels} stars={lastStars} payout={lastPayout} />
-              )}
-              <button type="button" className="endshift" onClick={() => setReportOpen(true)}>
-                End shift · view report
-              </button>
-            </div>
-            <span className="chevcol" aria-hidden="true" />
-          </div>
-
-          <div className="bumper" aria-hidden="true">
-            <span className="tail" />
-            <span className="chev" />
-            <span className="tail" />
-          </div>
-
-          <div className="footer">
-            {BANK_IS_PLACEHOLDER && (
-              <p className="demo-note">
-                ⚠ Demo content — the approved Chapter 47 bank file is not loaded; the records
-                shown are clearly marked placeholders, not medical content.
+              <p>
+                Every Star of Life is earned — correct answers only, never chance. Questions are
+                drawn verbatim from your vetted Chapter 47 exam bank. Roll as long as you like.
               </p>
-            )}
-            <p>
-              Every Star of Life is earned — correct answers only, never chance. Questions are
-              drawn verbatim from your vetted Chapter 47 exam bank. Roll as long as you like.
-            </p>
+            </div>
           </div>
         </div>
       </div>
@@ -692,13 +701,13 @@ const CSS = `
   --chrome1:#e7edf2; --chrome2:#67737f;
   --blue:#2a86ff; --red:#e11d2e; --amber:#ffb300; --hivis:#ffd60a; --hivis2:#d10a1a;
   --navy:#0a141e; --navy2:#050c14; --white:#f4f8fc;
-  --ink:#16202b; --ink2:#4c5a68;
+  --ink:#16202b; --ink2:#4c5a68; --cyan:#8fd0ff;
   --disp:'Saira Condensed','Arial Narrow',Impact,sans-serif;
   --body:'Inter',system-ui,-apple-system,'Segoe UI',sans-serif;
   min-height:100vh; min-height:100dvh;
   display:flex; justify-content:center; align-items:flex-start;
-  padding:14px 10px 40px;
-  background:radial-gradient(120% 90% at 50% 0%, #131a22 0%, #07090d 65%, #040609 100%);
+  padding:14px 8px 40px;
+  background:radial-gradient(120% 90% at 50% 0%, #10151c 0%, #06080c 65%, #030508 100%);
   font-family:var(--body); color:var(--white);
   -webkit-font-smoothing:antialiased;
 }
@@ -710,9 +719,19 @@ const CSS = `
 .rig.heat-blazing{ --flash:.36s; }
 .rig.code3{ --flash:.16s; }
 
-/* ── the vehicle body ── */
+/* dark outer rim around the silver vehicle face */
+.frame{
+  border-radius:30px; padding:7px;
+  background:linear-gradient(180deg, #232c36 0%, #141b23 55%, #0c1116 100%);
+  box-shadow:0 20px 50px rgba(0,0,0,.75), inset 0 1px 0 rgba(255,255,255,.08);
+  transition:box-shadow .5s ease;
+}
+.rig.heat-warm .frame{ box-shadow:0 20px 50px rgba(0,0,0,.75), 0 0 38px rgba(255,179,0,.16); }
+.rig.heat-blazing .frame{ box-shadow:0 20px 50px rgba(0,0,0,.75), 0 0 58px rgba(255,140,0,.32); }
+
+/* silver vehicle face */
 .shell{
-  border-radius:28px; padding:10px 12px 14px;
+  border-radius:24px; padding:8px 10px 12px;
   background:
     linear-gradient(180deg, #eef3f7 0%, #ccd5dd 22%, #a8b3bf 55%, #8d98a4 82%, #7b8692 100%);
   border:1px solid #5f6a76;
@@ -720,99 +739,108 @@ const CSS = `
     inset 0 2px 0 rgba(255,255,255,.75),
     inset 0 -3px 8px rgba(0,0,0,.35),
     inset 3px 0 6px rgba(255,255,255,.25),
-    inset -3px 0 6px rgba(0,0,0,.15),
-    0 18px 44px rgba(0,0,0,.7);
-  transition:box-shadow .5s ease;
+    inset -3px 0 6px rgba(0,0,0,.15);
 }
-.rig.heat-warm .shell{ box-shadow: inset 0 2px 0 rgba(255,255,255,.75), inset 0 -3px 8px rgba(0,0,0,.35), 0 18px 44px rgba(0,0,0,.7), 0 0 38px rgba(255,179,0,.18); }
-.rig.heat-blazing .shell{ box-shadow: inset 0 2px 0 rgba(255,255,255,.75), inset 0 -3px 8px rgba(0,0,0,.35), 0 18px 44px rgba(0,0,0,.7), 0 0 58px rgba(255,140,0,.34); }
 
 /* amber clearance markers along the roof edge */
-.markers{ display:flex; justify-content:center; gap:22px; padding:3px 0 8px; }
+.markers{ display:flex; justify-content:space-between; padding:2px 18px 7px; }
 .mk{
-  width:9px; height:9px; border-radius:50%;
-  background:radial-gradient(circle at 35% 30%, #ffe9a8, var(--amber) 60%, #8a5d00);
-  box-shadow:0 0 8px 2px rgba(255,179,0,.45), inset 0 -1px 1px rgba(0,0,0,.4);
+  width:22px; height:8px; border-radius:5px;
+  background:radial-gradient(120% 170% at 50% 25%, #ffd47a, var(--amber) 55%, #a3410a);
+  border:1px solid #5f6a76;
+  box-shadow:0 0 7px 1px rgba(255,140,40,.5), inset 0 -1px 1px rgba(0,0,0,.4);
   animation:breathe 2.6s ease-in-out infinite;
 }
-@keyframes breathe{ 0%,100%{opacity:.45; box-shadow:0 0 4px 1px rgba(255,179,0,.2);} 50%{opacity:1; box-shadow:0 0 10px 3px rgba(255,179,0,.55);} }
+@keyframes breathe{ 0%,100%{opacity:.5; box-shadow:0 0 4px 1px rgba(255,140,40,.25);} 50%{opacity:1; box-shadow:0 0 9px 2px rgba(255,140,40,.6);} }
 
-/* ── box-body header ── */
+/* ── box-body header — the marquee dominates ── */
 .head{
-  display:grid; grid-template-columns:minmax(76px,92px) 1fr minmax(96px,110px);
-  gap:8px; align-items:stretch; padding-bottom:10px;
+  display:grid; grid-template-columns:minmax(70px,86px) 1fr minmax(96px,110px);
+  gap:8px; align-items:stretch; padding-bottom:9px;
 }
 .head-l{ display:flex; flex-direction:column; gap:8px; }
 .corner-lamp{
-  display:block; height:30px; border-radius:9px;
-  background:radial-gradient(120% 160% at 50% 20%, #ff6b74, var(--red) 55%, #6e0410);
+  display:block; height:34px; border-radius:9px;
+  background:
+    repeating-linear-gradient(90deg, transparent 0 7px, rgba(0,0,0,.22) 7px 9px),
+    radial-gradient(120% 160% at 50% 20%, #ff6b74, var(--red) 55%, #6e0410);
   border:2px solid #5f6a76;
-  box-shadow:inset 0 2px 3px rgba(255,255,255,.35), inset 0 -3px 5px rgba(0,0,0,.5), 0 0 12px rgba(225,29,46,.5);
+  box-shadow:inset 0 2px 3px rgba(255,255,255,.35), inset 0 -3px 5px rgba(0,0,0,.5), 0 0 12px rgba(225,29,46,.45);
 }
 .head-r{ display:flex; flex-direction:column; gap:8px; }
 
 .gauge{
   flex:1; display:flex; flex-direction:column; justify-content:center;
-  border-radius:10px; padding:6px 4px;
+  border-radius:11px; padding:7px 4px;
   background:linear-gradient(180deg, #101c29, var(--navy2));
   border:1.5px solid #55606c;
   box-shadow:inset 0 2px 6px rgba(0,0,0,.85), 0 1px 0 rgba(255,255,255,.4);
   text-align:center;
 }
 .g-value{
-  display:flex; align-items:center; justify-content:center; gap:5px;
-  font-family:var(--disp); font-weight:800; font-size:21px; line-height:1;
-  color:#8fc0ff; text-shadow:0 0 9px rgba(42,134,255,.65);
+  display:flex; align-items:center; justify-content:center; gap:6px;
+  font-family:var(--disp); font-weight:800; font-size:22px; line-height:1;
+  color:var(--cyan); text-shadow:0 0 10px rgba(90,180,255,.75);
 }
 .g-label{
   display:block; margin-top:3px;
   font-family:var(--disp); font-weight:700; font-size:9px; letter-spacing:.16em;
   text-transform:uppercase; color:#93a2b2;
 }
-.gauge.amber .g-value{ color:var(--amber); text-shadow:0 0 9px rgba(255,179,0,.6); font-size:26px; }
 .gauge.hot .g-value{ color:#ff8a00; text-shadow:0 0 11px rgba(255,120,0,.8); }
+.head-l .gauge .g-value{ font-size:26px; flex-direction:column; gap:4px; }
 .g-coin{
-  width:16px; height:16px; border-radius:50%;
+  width:22px; height:22px; border-radius:50%;
   background:radial-gradient(circle at 35% 30%, #ffe9a8, #e0a400 55%, #8a5d00);
-  box-shadow:inset 0 -1px 2px rgba(0,0,0,.5), 0 0 6px rgba(255,179,0,.5);
+  border:1px solid #6e5200;
+  box-shadow:inset 0 -2px 3px rgba(0,0,0,.5), 0 0 8px rgba(255,179,0,.55);
 }
 
-/* marquee screen */
+/* marquee screen — the dominant element */
 .marquee{
   display:flex; flex-direction:column; justify-content:center; align-items:center; gap:3px;
-  border-radius:12px; padding:10px 8px;
-  background:linear-gradient(170deg, #0e1c2c 0%, var(--navy) 50%, var(--navy2) 100%);
-  border:1.5px solid #55606c;
-  box-shadow:inset 0 3px 9px rgba(0,0,0,.85), 0 1px 0 rgba(255,255,255,.4);
+  border-radius:14px; padding:14px 10px 10px;
+  background:linear-gradient(170deg, #17293c 0%, #0c1a29 40%, var(--navy2) 100%);
+  border:2px solid #55606c;
+  box-shadow:inset 0 3px 12px rgba(0,0,0,.85), inset 0 0 40px rgba(20,50,90,.35), 0 1px 0 rgba(255,255,255,.4);
   text-align:center;
 }
 .title{
-  margin:0; display:flex; align-items:center; justify-content:center; gap:7px;
-  font-family:var(--disp); font-weight:800; font-size:clamp(19px,5.6vw,28px);
-  letter-spacing:.05em; line-height:1; color:#ffe2b8;
-  text-shadow:0 0 6px rgba(255,157,46,.9), 0 0 16px rgba(225,29,46,.75), 0 0 30px rgba(225,29,46,.45);
+  margin:0; display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap;
+  font-family:var(--disp); font-weight:800; font-size:clamp(21px,6.2vw,31px);
+  letter-spacing:.05em; line-height:1; color:#ffdca8;
+  text-shadow:0 0 6px rgba(255,157,46,.95), 0 0 18px rgba(255,110,40,.7), 0 0 34px rgba(225,29,46,.5);
 }
-.title .amb{ width:38px; flex:0 0 auto; filter:drop-shadow(0 0 5px rgba(255,157,46,.55)); }
+.title .amb{ width:42px; flex:0 0 auto; filter:drop-shadow(0 0 6px rgba(255,157,46,.6)); }
 .sub{
-  font-family:var(--disp); font-weight:700; font-size:12px; letter-spacing:.24em;
-  text-transform:uppercase; color:#f2e7d4; text-shadow:0 0 8px rgba(255,226,184,.5);
+  margin-top:2px;
+  font-family:var(--disp); font-weight:700; font-size:13px; letter-spacing:.26em;
+  text-transform:uppercase; color:#f5ecdc; text-shadow:0 0 10px rgba(255,226,184,.55);
+}
+.mq-div{
+  display:block; width:72%; height:2px; margin:8px 0 7px; border-radius:2px;
+  background:linear-gradient(90deg, transparent, rgba(140,170,200,.45) 20%, rgba(140,170,200,.45) 80%, transparent);
 }
 .chap{
-  font-family:var(--disp); font-weight:700; font-size:12px; letter-spacing:.2em;
-  text-transform:uppercase; color:var(--amber); text-shadow:0 0 8px rgba(255,179,0,.55);
+  font-family:var(--disp); font-weight:800; font-size:17px; letter-spacing:.24em;
+  text-transform:uppercase; color:var(--amber); text-shadow:0 0 10px rgba(255,179,0,.6);
+}
+.chap2{
+  font-family:var(--disp); font-weight:700; font-size:14px; letter-spacing:.3em;
+  text-transform:uppercase; color:var(--amber); text-shadow:0 0 9px rgba(255,179,0,.5);
 }
 .plate{
-  margin-top:4px; font-family:var(--disp); font-weight:800; font-size:11px; letter-spacing:.12em;
-  color:#1c232b; padding:2px 9px; border-radius:5px;
+  margin-top:7px; font-family:var(--disp); font-weight:800; font-size:11px; letter-spacing:.12em;
+  color:#1c232b; padding:2px 10px; border-radius:5px;
   background:linear-gradient(180deg, var(--chrome1), #aeb8c2 60%, var(--chrome2));
   border:1px solid #525d68; box-shadow:inset 0 1px 0 #fff, 0 1px 3px rgba(0,0,0,.6);
 }
 
-/* ── emergency light bar, mounted on the windshield frame ── */
-.lightbar{ position:relative; z-index:2; padding:0 26px; margin-bottom:-5px; }
+/* ── light-bar pod between marquee and cab ── */
+.lightbar{ position:relative; z-index:2; display:flex; justify-content:center; margin:1px 0 -7px; }
 .lb-shell{
-  display:flex; align-items:center; justify-content:center; gap:8px;
-  padding:5px 10px; border-radius:9px;
+  display:flex; align-items:center; justify-content:center; gap:7px;
+  width:min(66%,330px); padding:5px 10px; border-radius:9px;
   background:linear-gradient(180deg, #3a434d 0%, #1d242c 60%, #12181f 100%);
   border:1px solid #10151b;
   box-shadow:0 3px 8px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.14);
@@ -834,41 +862,55 @@ const CSS = `
   100%{ opacity:1; }
 }
 .lb-center{
-  width:34px; height:17px; border-radius:4px;
+  width:32px; height:17px; border-radius:4px;
   background:linear-gradient(180deg, var(--chrome1), #98a3ae 70%, var(--chrome2));
   box-shadow:inset 0 1px 0 #fff, inset 0 -2px 3px rgba(0,0,0,.4);
 }
 .lightbar.rave .led{ filter:saturate(1.5); }
 
-/* ── cab face: windshield panes between glowing pillar strips ── */
-.cabface{
-  position:relative; overflow:hidden; z-index:1;
-  display:grid; grid-template-columns:14px 1fr 14px; gap:9px;
-  border-radius:18px; padding:12px 10px 12px;
-  background:linear-gradient(180deg, #4a5561 0%, #333c46 55%, #262e37 100%);
-  border:2px solid #78838f;
-  box-shadow:inset 0 2px 4px rgba(255,255,255,.15), inset 0 -4px 9px rgba(0,0,0,.55), 0 5px 12px rgba(0,0,0,.45);
-}
-.cabface.winflash{ animation:winflash ${T.FLASH_MS}ms ease-out; }
-@keyframes winflash{
-  0%{ box-shadow:inset 0 2px 4px rgba(255,255,255,.15), 0 0 0 rgba(255,179,0,0); }
-  30%{ box-shadow:inset 0 2px 4px rgba(255,255,255,.15), 0 0 32px 7px rgba(255,179,0,.85); }
-  100%{ box-shadow:inset 0 2px 4px rgba(255,255,255,.15), 0 0 0 rgba(255,179,0,0); }
+/* ── cab zone: glowing pillar strips OUTSIDE the silver cab ── */
+.cabzone{
+  display:grid; grid-template-columns:13px minmax(0,1fr) 13px; gap:7px; align-items:stretch;
 }
 .strip{
-  border-radius:8px; align-self:stretch;
+  border-radius:8px; margin:18px 0 26px;
   background:repeating-linear-gradient(180deg, currentColor 0 9px, #0b1420 9px 15px);
+  border:1px solid rgba(0,0,0,.45);
   animation:strobe var(--flash) linear infinite;
 }
-.strip.left{ color:var(--blue); box-shadow:0 0 12px rgba(42,134,255,.55), inset 0 0 3px rgba(0,0,0,.6); }
-.strip.right{ color:var(--red); box-shadow:0 0 12px rgba(225,29,46,.6), inset 0 0 3px rgba(0,0,0,.6);
+.strip.left{ color:var(--blue); box-shadow:0 0 13px rgba(42,134,255,.6), inset 0 0 3px rgba(0,0,0,.6); }
+.strip.right{ color:var(--red); box-shadow:0 0 13px rgba(225,29,46,.65), inset 0 0 3px rgba(0,0,0,.6);
   animation-delay:calc(var(--flash) / -2); }
 @keyframes strobe{ 0%,45%{ opacity:1; } 50%,95%{ opacity:.4; } 100%{ opacity:1; } }
 
-.windshields{ display:grid; grid-template-columns:repeat(3,1fr); gap:9px; }
+/* the silver cab: one mass — windshield bay + cowl */
+.cab{
+  border-radius:26px 26px 16px 16px; padding:11px 10px 9px;
+  background:linear-gradient(180deg, #dfe6ec 0%, #b9c3cc 35%, #98a3ae 70%, #87929e 100%);
+  border:1px solid #5f6a76;
+  box-shadow:inset 0 2px 0 rgba(255,255,255,.7), inset 0 -3px 7px rgba(0,0,0,.3), 0 5px 12px rgba(0,0,0,.45);
+}
+.bayinset{
+  position:relative; overflow:hidden;
+  display:grid; grid-template-columns:repeat(3,1fr); gap:9px;
+  border-radius:16px 16px 10px 10px; padding:10px;
+  background:linear-gradient(180deg, #333c46 0%, #232b34 55%, #1a2129 100%);
+  border:1px solid #4a5561;
+  box-shadow:inset 0 3px 8px rgba(0,0,0,.65);
+}
+.bayinset.winflash{ animation:winflash ${T.FLASH_MS}ms ease-out; }
+@keyframes winflash{
+  0%{ box-shadow:inset 0 3px 8px rgba(0,0,0,.65), 0 0 0 rgba(255,179,0,0); }
+  30%{ box-shadow:inset 0 3px 8px rgba(0,0,0,.65), 0 0 32px 7px rgba(255,179,0,.85); }
+  100%{ box-shadow:inset 0 3px 8px rgba(0,0,0,.65), 0 0 0 rgba(255,179,0,0); }
+}
 .pane{
-  position:relative; aspect-ratio:10/11; border-radius:12px 12px 9px 9px; overflow:hidden;
-  background:linear-gradient(165deg, #10202f 0%, var(--navy) 45%, var(--navy2) 100%);
+  position:relative; aspect-ratio:10/11; border-radius:11px; overflow:hidden;
+  background:
+    linear-gradient(rgba(120,170,220,.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(120,170,220,.055) 1px, transparent 1px),
+    linear-gradient(165deg, #10202f 0%, var(--navy) 45%, var(--navy2) 100%);
+  background-size:15px 15px, 15px 15px, 100% 100%;
   border:2px solid #6b7682;
   box-shadow:inset 0 5px 13px rgba(0,0,0,.9), inset 0 0 0 1px rgba(130,160,190,.2);
   display:flex; align-items:center; justify-content:center;
@@ -911,37 +953,32 @@ const CSS = `
 }
 @keyframes flare{ 0%{ opacity:0; transform:scale(.3);} 35%{opacity:1;} 100%{ opacity:0; transform:scale(1.5);} }
 
-/* ── hood: grille, bumper button, turn lamps ── */
-.hood{
-  margin-top:10px; border-radius:14px; padding:9px 12px 8px;
-  background:linear-gradient(180deg, #f0f4f8 0%, #cfd8e0 40%, #a3aeba 100%);
-  border:1px solid #78838f;
-  box-shadow:inset 0 2px 0 rgba(255,255,255,.8), inset 0 -3px 6px rgba(0,0,0,.25), 0 3px 8px rgba(0,0,0,.35);
-}
-.grille{
-  width:min(72%,300px); height:20px; margin:0 auto 10px; border-radius:6px;
+/* cowl: vents · action button · dome knob (set into the cab) */
+.console{ display:flex; align-items:center; gap:10px; margin-top:10px; }
+.vents{
+  flex:0 0 auto; width:46px; height:26px; border-radius:5px;
   background:repeating-linear-gradient(180deg, #39424c 0 3.5px, #b9c3cc 3.5px 8px);
   box-shadow:inset 0 1px 3px rgba(0,0,0,.5);
 }
-.console{ display:flex; align-items:center; gap:10px; }
 .btn{
   display:inline-flex; align-items:center; justify-content:center; gap:10px;
-  flex:1; min-height:58px; padding:12px 18px; border-radius:16px; cursor:pointer;
-  font-family:var(--disp); font-weight:800; font-size:20px; letter-spacing:.08em;
-  color:var(--white); border:2px solid #8e99a5;
-  box-shadow:0 5px 0 rgba(0,0,0,.4), inset 0 2px 0 rgba(255,255,255,.4), inset 0 -6px 10px rgba(0,0,0,.3);
+  flex:1; min-width:0; min-height:56px; padding:12px 10px; border-radius:18px; cursor:pointer;
+  white-space:nowrap;
+  font-family:var(--disp); font-weight:800; font-size:19px; letter-spacing:.07em;
+  color:var(--white); border:2px solid #7c1520;
+  box-shadow:0 5px 0 rgba(0,0,0,.4), inset 0 3px 0 rgba(255,255,255,.35), inset 0 -8px 12px rgba(0,0,0,.35);
   transition:transform .06s ease, filter .15s ease;
 }
-.btn:active:not(:disabled){ transform:translateY(3px); box-shadow:0 2px 0 rgba(0,0,0,.4), inset 0 2px 0 rgba(255,255,255,.3); }
+.btn:active:not(:disabled){ transform:translateY(3px); box-shadow:0 2px 0 rgba(0,0,0,.4), inset 0 3px 0 rgba(255,255,255,.25); }
 .btn:focus-visible{ outline:3px solid #c77800; outline-offset:3px; }
 .btn:disabled{ filter:grayscale(.55) brightness(.75); cursor:default; }
 .respond{ background:linear-gradient(180deg, #ff5a63 0%, var(--red) 45%, #8e0d1a 100%); text-shadow:0 1px 2px rgba(0,0,0,.6); }
-.runback{ background:linear-gradient(180deg, #5ea4ff 0%, var(--blue) 45%, #0e4a9c 100%); text-shadow:0 1px 2px rgba(0,0,0,.6); }
-.restock{ background:linear-gradient(180deg, #ffd166 0%, var(--amber) 45%, #9c6b00 100%); color:#20180a; }
+.runback{ background:linear-gradient(180deg, #5ea4ff 0%, var(--blue) 45%, #0e4a9c 100%); border-color:#0c3a7c; text-shadow:0 1px 2px rgba(0,0,0,.6); }
+.restock{ background:linear-gradient(180deg, #ffd166 0%, var(--amber) 45%, #9c6b00 100%); border-color:#7a5300; color:#20180a; }
 .dome-knob{
-  flex:0 0 auto; width:36px; height:36px; border-radius:50%;
+  flex:0 0 auto; width:38px; height:38px; border-radius:50%;
   background:radial-gradient(circle at 35% 28%, #ffb3b8, #d81525 55%, #6e0410);
-  border:2px solid #8e99a5;
+  border:2px solid #78838f;
   box-shadow:0 0 10px rgba(255,60,70,.6), inset 0 -3px 4px rgba(0,0,0,.5), 0 3px 4px rgba(0,0,0,.35);
 }
 .hood-lamps{ display:flex; align-items:center; gap:10px; margin-top:9px; }
@@ -953,15 +990,26 @@ const CSS = `
 }
 .subtext{ flex:1; text-align:center; font-size:13px; font-weight:600; color:#33404c; min-height:18px; }
 
-/* ── body bay: white run-sheet between chevron rails ── */
+/* ── body bay: white run-sheet between dark chevron rails ── */
 .bay{
   margin-top:10px;
-  display:grid; grid-template-columns:16px 1fr 16px; gap:9px; align-items:stretch;
+  display:grid; grid-template-columns:17px 1fr 17px; gap:8px; align-items:stretch;
 }
 .chevcol{
   border-radius:6px;
-  background:repeating-linear-gradient(45deg, var(--hivis) 0 11px, var(--hivis2) 11px 22px);
-  box-shadow:inset 0 1px 3px rgba(0,0,0,.35);
+  background:
+    repeating-linear-gradient(45deg, transparent 0 7px, #2b333c 7px 14px),
+    repeating-linear-gradient(135deg, transparent 0 7px, #2b333c 7px 14px);
+  background-size:50% 100%, 50% 100%;
+  background-position:left top, right top;
+  background-repeat:no-repeat;
+  box-shadow:inset 0 1px 3px rgba(0,0,0,.25);
+}
+.chevcol.flip{
+  background-position:right top, left top;
+  background-image:
+    repeating-linear-gradient(135deg, transparent 0 7px, #2b333c 7px 14px),
+    repeating-linear-gradient(45deg, transparent 0 7px, #2b333c 7px 14px);
 }
 .sheet{
   border-radius:14px; padding:14px 14px 10px;
@@ -986,15 +1034,22 @@ const CSS = `
 
 /* question card (on the run sheet) */
 .qcard{ text-align:left; }
-.q-head{ display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding-bottom:10px; border-bottom:2px solid #223140; margin-bottom:10px; }
-.tag{
-  font-family:var(--disp); font-weight:700; font-size:11px; letter-spacing:.14em;
-  text-transform:uppercase; padding:3px 9px; border-radius:999px; color:#fff;
+.q-head{
+  display:flex; align-items:baseline; gap:10px; padding-bottom:8px;
+  border-bottom:2px solid #2b4257; margin-bottom:11px;
 }
-.tag.dispatch{ background:var(--red); }
-.tag.protocol{ background:#1766cc; }
-.cat{ font-family:var(--disp); font-weight:700; font-size:13px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink); }
-.hy{ margin-left:auto; font-family:var(--disp); font-weight:700; font-size:11px; letter-spacing:.14em; color:#9c6b00; }
+.q-title{
+  font-family:var(--disp); font-weight:700; font-size:15px; letter-spacing:.07em;
+  text-transform:uppercase; color:var(--ink);
+}
+.tagword{ font-style:normal; }
+.tagword.dispatch{ color:#b3121f; }
+.tagword.protocol{ color:#1766cc; }
+.hy{
+  margin-left:auto; flex:0 0 auto;
+  font-family:var(--disp); font-weight:700; font-size:12px; letter-spacing:.14em;
+  color:#67737f;
+}
 .prompt{
   margin:0 0 14px; font-size:16px; line-height:1.5; font-weight:500; color:var(--ink);
   overflow-wrap:break-word;
@@ -1008,14 +1063,15 @@ const CSS = `
   font-size:15px; line-height:1.4; transition:border-color .15s ease, background .15s ease;
   overflow-wrap:anywhere;
 }
-.opt:hover:not(:disabled){ border-color:#9c6b00; background:#fdf8ef; }
+.opt:hover:not(:disabled){ border-color:#67737f; background:#f4f7fa; }
 .opt:focus-visible{ outline:3px solid #c77800; outline-offset:2px; }
 .opt:disabled{ cursor:default; opacity:.75; }
 .opt .key{
   flex:0 0 auto; width:26px; height:26px; border-radius:6px;
   display:inline-flex; align-items:center; justify-content:center;
-  font-family:var(--disp); font-weight:800; font-size:14px; color:#20180a;
-  background:linear-gradient(180deg, #ffd166, var(--amber)); box-shadow:0 1px 2px rgba(0,0,0,.35);
+  font-family:var(--disp); font-weight:800; font-size:14px; color:#223140;
+  background:linear-gradient(180deg, #f2f5f8, #dbe2e9);
+  border:1px solid #b9c3cc; box-shadow:0 1px 2px rgba(0,0,0,.15);
 }
 .opt.hit{ border-color:var(--blue); background:rgba(42,134,255,.1); box-shadow:0 0 12px rgba(42,134,255,.3); opacity:1; }
 .opt.miss{ border-color:var(--red); background:rgba(225,29,46,.07); opacity:1; }
@@ -1068,7 +1124,7 @@ const CSS = `
 
 /* ── bumper & footer ── */
 .bumper{
-  margin-top:12px; display:flex; align-items:center; gap:10px;
+  margin-top:11px; display:flex; align-items:center; gap:10px;
   padding:7px 9px; border-radius:10px;
   background:linear-gradient(180deg, var(--chrome1), #a7b1bb 55%, var(--chrome2));
   border:1px solid #78838f;
@@ -1085,7 +1141,7 @@ const CSS = `
   box-shadow:inset 0 1px 2px rgba(0,0,0,.4);
 }
 .footer{
-  margin-top:12px; border-radius:12px; padding:11px 12px 6px;
+  margin-top:11px; border-radius:14px; padding:11px 12px 6px;
   background:linear-gradient(180deg, #101c29, var(--navy2));
   border:1.5px solid #55606c;
   box-shadow:inset 0 2px 6px rgba(0,0,0,.8);
@@ -1119,27 +1175,36 @@ const CSS = `
 .r-lab{ display:block; margin-top:2px; font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:#8fa0b2; }
 .r-line{ margin:0 0 6px; font-size:14.5px; line-height:1.5; color:#dce5ee; }
 .r-always{ margin:0 0 14px; font-size:12.5px; color:#9fb0c0; }
-.btn.back{ background:linear-gradient(180deg, #5ea4ff 0%, var(--blue) 45%, #0e4a9c 100%); min-height:52px; font-size:17px; width:100%; }
+.btn.back{ background:linear-gradient(180deg, #5ea4ff 0%, var(--blue) 45%, #0e4a9c 100%); border-color:#0c3a7c; min-height:52px; font-size:17px; width:100%; }
 .btn.back:focus-visible{ outline-color:var(--amber); }
 
 /* ── responsive (spec §14) ── */
 @media (max-width:420px){
-  .head{ grid-template-columns:minmax(64px,78px) 1fr minmax(84px,94px); gap:6px; }
-  .title{ font-size:18px; }
-  .title .amb{ width:30px; }
-  .sub{ font-size:9.5px; letter-spacing:.18em; }
-  .chap{ font-size:10px; }
-  .g-value{ font-size:17px; }
-  .gauge.amber .g-value{ font-size:21px; }
+  .head{ grid-template-columns:minmax(60px,74px) 1fr minmax(84px,94px); gap:6px; }
+  .title{ font-size:19px; }
+  .title .amb{ width:32px; }
+  .sub{ font-size:10px; letter-spacing:.2em; }
+  .chap{ font-size:14px; letter-spacing:.18em; }
+  .chap2{ font-size:11px; letter-spacing:.22em; }
+  .g-value{ font-size:18px; }
+  .head-l .gauge .g-value{ font-size:21px; }
+  .g-coin{ width:18px; height:18px; }
   .g-label{ font-size:7.5px; letter-spacing:.1em; }
-  .btn{ font-size:16px; min-height:54px; }
-  .bay{ grid-template-columns:12px 1fr 12px; gap:7px; }
-  .lightbar{ padding:0 14px; }
+  .btn{ font-size:14px; min-height:52px; letter-spacing:.05em; padding:10px 6px; gap:6px; }
+  .vents{ width:30px; }
+  .dome-knob{ width:30px; height:30px; }
+  .console{ gap:7px; }
+  .bay{ grid-template-columns:13px minmax(0,1fr) 13px; gap:6px; }
+  .cabzone{ grid-template-columns:11px minmax(0,1fr) 11px; gap:5px; }
+}
+@media (max-width:350px){
+  .btn{ font-size:12.5px; letter-spacing:.03em; }
+  .vents{ display:none; }
 }
 
 /* ── reduced motion (spec §14): calm, fully playable ── */
 @media (prefers-reduced-motion: reduce){
-  .mk,.led,.strip,.q.bright,.banner.s3,.cabface.winflash,.sol.lit,
+  .mk,.led,.strip,.q.bright,.banner.s3,.bayinset.winflash,.sol.lit,
   .flatx .ecg,.flatx .xs,.flare{ animation:none !important; }
   .flatx .ecg,.flatx .xs{ stroke-dashoffset:0; }
   .flare{ display:none; }
